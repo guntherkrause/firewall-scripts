@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAN-OS Rulebase Audit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: operator console. Sticky toolbar, summary strip, then one collapsible table per rulebase; CLI remediation lives beside each finding and in one aggregate script at the end. */
+:root{
+  --bg:#f6f5f2; --panel:#ffffff; --fg:#1d1f22; --muted:#616670; --line:#dcdad3; --line-strong:#b9b6ac;
+  --accent:#b4531a; --accent-ink:#ffffff; --code-bg:#1f2126; --code-fg:#e8e6df;
+  --crit:#b3261e; --high:#c7641a; --med:#a3800a; --low:#3f6e8c; --ok:#2f7a4b; --info:#5e6470;
+  --crit-bg:#fbe9e7; --high-bg:#fbeedf; --med-bg:#f8f1d6; --low-bg:#e5eff5; --ok-bg:#e3f1e8;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --radius:4px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#17191c; --panel:#1f2226; --fg:#e7e5df; --muted:#9a9ea7; --line:#33373d; --line-strong:#4a4f57;
+  --accent:#e0803f; --accent-ink:#17191c; --code-bg:#101214; --code-fg:#dedcd4;
+  --crit:#ff7b73; --high:#f2a05a; --med:#e0c35a; --low:#86b7d6; --ok:#7fcb98; --info:#a6abb5;
+  --crit-bg:#3a1f1e; --high-bg:#3a2a1c; --med-bg:#36301a; --low-bg:#1d2b36; --ok-bg:#1c3226;
+  color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#17191c; --panel:#1f2226; --fg:#e7e5df; --muted:#9a9ea7; --line:#33373d; --line-strong:#4a4f57;
+  --accent:#e0803f; --accent-ink:#17191c; --code-bg:#101214; --code-fg:#dedcd4;
+  --crit:#ff7b73; --high:#f2a05a; --med:#e0c35a; --low:#86b7d6; --ok:#7fcb98; --info:#a6abb5;
+  --crit-bg:#3a1f1e; --high-bg:#3a2a1c; --med-bg:#36301a; --low-bg:#1d2b36; --ok-bg:#1c3226;
+  color-scheme:dark }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+.wrap{max-width:1180px;margin:0 auto}
+h1,h2,h3{margin:0;text-wrap:balance;font-weight:600;line-height:1.25}
+h1{font-size:1.35rem}
+h2{font-size:1.05rem}
+h3{font-size:.95rem}
+p{margin:0}
+button{font:inherit;cursor:pointer}
+code,pre{font-family:var(--mono);font-size:12.5px}
+.muted{color:var(--muted)}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+
+header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding-block:18px 14px;border-bottom:1px solid var(--line)}
+header.top .brand{display:flex;align-items:center;gap:12px}
+.mark{width:34px;height:34px;border:2px solid var(--accent);border-radius:var(--radius);display:grid;place-items:center;font-family:var(--mono);font-weight:500;color:var(--accent);font-size:13px}
+.statusline{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+.grid{display:grid;gap:16px}
+.input-grid{grid-template-columns:1fr 1fr;margin-top:16px}
+@media (max-width:760px){.input-grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;min-width:0}
+.drop{border:1.5px dashed var(--line-strong);border-radius:var(--radius);padding:22px 14px;text-align:center;color:var(--muted);transition:border-color .15s,background .15s;cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--high-bg);color:var(--fg)}
+.drop strong{color:var(--fg)}
+textarea{width:100%;min-height:120px;resize:vertical;font-family:var(--mono);font-size:12px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:var(--radius);padding:8px;margin-top:10px}
+textarea:focus,input:focus,button:focus-visible,select:focus{outline:2px solid var(--accent);outline-offset:1px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{background:var(--panel);color:var(--fg);border:1px solid var(--line-strong);border-radius:var(--radius);padding:7px 12px;font-weight:500}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{padding:4px 9px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:default}
+label.field{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+label.field input,label.field select{font:inherit;font-family:var(--mono);font-size:12.5px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:6px 8px;width:100%}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px}
+.check-row{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);align-self:end;padding-bottom:6px}
+
+/* summary */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:16px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;border-left:4px solid var(--line-strong)}
+.tile .n{font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.tile.crit{border-left-color:var(--crit)} .tile.high{border-left-color:var(--high)} .tile.med{border-left-color:var(--med)} .tile.low{border-left-color:var(--low)} .tile.ok{border-left-color:var(--ok)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.chip{border:1px solid var(--line-strong);background:var(--panel);color:var(--fg);border-radius:999px;padding:3px 11px;font-size:12px;font-weight:500}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.search{font:inherit;font-size:13px;padding:5px 9px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);color:var(--fg);min-width:180px}
+
+/* rulebase sections */
+section.rb{margin-top:20px}
+section.rb>.head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--line)}
+section.rb>.head code{color:var(--muted)}
+.tablewrap{overflow-x:auto;margin-top:8px}
+table{border-collapse:collapse;width:100%;min-width:720px}
+th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}
+td.idx{color:var(--muted);font-variant-numeric:tabular-nums;width:42px}
+td .cell{font-family:var(--mono);font-size:12px;color:var(--muted);word-break:break-word}
+tr.rule{cursor:pointer}
+tr.rule:hover td{background:color-mix(in srgb,var(--fg) 4%,transparent)}
+tr.rule.disabled td{opacity:.55}
+tr.rule.disabled td .name::after{content:" (disabled)";font-size:11px;color:var(--muted)}
+.name{font-weight:500}
+.sev{display:inline-block;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:1px 7px;border-radius:3px;white-space:nowrap}
+.sev.critical{background:var(--crit-bg);color:var(--crit)} .sev.high{background:var(--high-bg);color:var(--high)} .sev.medium{background:var(--med-bg);color:var(--med)} .sev.low{background:var(--low-bg);color:var(--low)} .sev.pass{background:var(--ok-bg);color:var(--ok)}
+.act{font-family:var(--mono);font-size:12px}
+.act.allow{color:var(--ok)} .act.deny,.act.drop,.act.reset-client,.act.reset-server,.act.reset-both{color:var(--crit)}
+tr.detail td{background:color-mix(in srgb,var(--fg) 3%,transparent);padding:10px 12px 14px}
+.findings{display:grid;gap:10px}
+.finding{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+.finding .sev{margin-top:2px}
+.finding .what{font-weight:500}
+.finding .why{color:var(--muted);font-size:12.5px;max-width:70ch}
+.cli{position:relative;margin-top:8px;background:var(--code-bg);color:var(--code-fg);border-radius:var(--radius);padding:10px 12px;overflow-x:auto;white-space:pre;line-height:1.55}
+.cli .cmt{color:#8b919c}
+.cli .kw{color:#e0a56b}
+.copy{position:absolute;top:6px;right:6px;background:transparent;color:var(--code-fg);border:1px solid #4a4f57;border-radius:3px;padding:2px 8px;font-size:11px;font-family:var(--mono)}
+.copy:hover{border-color:#8b919c}
+.rb-findings{margin-top:12px;display:grid;gap:10px}
+.rb-finding{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line-strong);border-radius:var(--radius);padding:10px 12px}
+.rb-finding.critical{border-left-color:var(--crit)} .rb-finding.high{border-left-color:var(--high)} .rb-finding.medium{border-left-color:var(--med)} .rb-finding.low{border-left-color:var(--low)}
+.script{margin-top:24px}
+.script .cli{max-height:420px;overflow:auto}
+.checks{margin-top:24px}
+.checks table{min-width:560px}
+.checks td:first-child{white-space:nowrap}
+details.ref summary{cursor:pointer;font-weight:500}
+.empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed var(--line-strong);border-radius:var(--radius);margin-top:16px}
+.note{font-size:12px;color:var(--muted);margin-top:8px;max-width:80ch}
+.toast{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:6px 14px;border-radius:999px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <div class="brand">
+    <div class="mark">PA</div>
+    <div>
+      <h1>PAN-OS Rulebase Audit</h1>
+      <p class="muted">Security-rule best-practice analysis with <code>set</code> command remediation. Runs entirely in your browser; nothing is uploaded.</p>
+    </div>
+  </div>
+  <div class="statusline" id="status">no config loaded</div>
+</header>
+
+<div class="grid input-grid">
+  <div class="panel">
+    <div class="eyebrow">1 · Config source</div>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose or drop a PAN-OS XML file">
+      <strong>Drop a PAN-OS XML export here</strong><br>or tap to choose a file (running-config.xml, candidate-config.xml, Panorama exports)
+      <input type="file" id="file" accept=".xml,text/xml" hidden>
+    </div>
+    <textarea id="xml" placeholder="…or paste XML here"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" id="run">Analyze</button>
+      <button class="btn" id="loadSample">Load example config</button>
+      <button class="btn" id="clear">Clear</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="eyebrow">2 · Remediation targets</div>
+    <p class="note" style="margin-top:4px">Names used in the generated commands. Point them at the objects that already exist in your config, or at the ones you intend to create.</p>
+    <div class="settings">
+      <label class="field">Security profile group<input id="optGroup" value="BP-Profile-Group"></label>
+      <label class="field">Log forwarding profile<input id="optLogFwd" value="Default-LFP"></label>
+      <label class="field">Cleanup rule name<input id="optCleanup" value="Cleanup-Deny-All"></label>
+      <label class="field">ITSM ticket pattern (regex)<input id="optTicket" value="\b(INC|CRQ|WO|TSK)\d{5,}\b"></label>
+      <label class="field">Example ticket for commands<input id="optTicketEx" value="CRQ0000000"></label>
+      <label class="field">Team contact for new tags<input id="optTeam" value="example@example.com"></label>
+      <label class="field">Review window (months, 0 = off)<input id="optStale" type="number" min="0" value="12"></label>
+      <label class="check-row"><input type="checkbox" id="optTicketOn" checked> Enforce ITSM ticket number as the audit comment (and keep it out of descriptions)</label>
+      <label class="check-row"><input type="checkbox" id="optTagsOn" checked> Enforce team: / month: / year: tags on every rule</label>
+      <label class="check-row"><input type="checkbox" id="optDocs" checked> Include documentation findings (description, tags, naming)</label>
+      <label class="check-row"><input type="checkbox" id="optShadow" checked> Detect shadowed and redundant rules</label>
+    </div>
+  </div>
+</div>
+
+<div id="results"></div>
+
+<div class="checks">
+  <details class="ref">
+    <summary>Checks performed (reference)</summary>
+    <div class="tablewrap"><table id="checkTable"><thead><tr><th>ID</th><th>Severity</th><th>Check</th><th>Basis</th></tr></thead><tbody></tbody></table></div>
+    <p class="note">Checks follow Palo Alto Networks' published best practices for security policy: App-ID instead of port-based rules, <code>application-default</code> service, security profiles on every allow rule, logging at session end with forwarding, explicit zones and addresses, and an explicit logged cleanup rule. Shadow detection compares object names only; address and service groups are not expanded, so treat those results as leads to confirm with the firewall's own shadow-rule check at commit time.</p>
+  </details>
+</div>
+</div>
+<div class="toast" id="toast">Copied</div>
+
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SEV_RANK={critical:4,high:3,medium:2,low:1};
+const SEV_LABEL={critical:'Critical',high:'High',medium:'Medium',low:'Low'};
+
+/* ---------- Check catalogue ---------- */
+const CHECKS=[
+ ['R01','critical','Allow rule matches any application','Port-based or wide-open rules bypass App-ID; permit only the applications needed.'],
+ ['R02','critical','Allow rule is any source, any destination, any application','Effectively an "allow all"; constrain at least two of the three dimensions.'],
+ ['R03','high','Allow rule uses service any with specific applications','Set service to application-default so apps are only permitted on their standard ports.'],
+ ['R04','high','Allow rule without security profiles','Every allow rule should carry AV, Anti-Spyware, Vulnerability, URL Filtering, WildFire and File Blocking (ideally via a profile group).'],
+ ['R05','medium','Allow rule missing one or more profile types','Individual profiles attached but at least one recommended profile type is absent.'],
+ ['R06','high','Logging at session end is disabled','Without log-end the rule leaves no record of the sessions it matched.'],
+ ['R07','medium','No log forwarding profile','Logs stay on the firewall only; forward to Panorama, Cortex Data Lake or syslog.'],
+ ['R08','low','Log at session start enabled','Doubles log volume; use only while troubleshooting.'],
+ ['R09','medium','Zone set to any','Rules should name explicit source and destination zones.'],
+ ['R10','medium','Allow rule from any source address to any destination','Narrow source or destination to the required address objects or groups.'],
+ ['R11','medium','Negated source or destination','Negation is easy to misread and often broader than intended; prefer explicit objects.'],
+ ['R12','low','Server response inspection disabled (DSRI)','Threat inspection is skipped on the server-to-client direction.'],
+ ['R13','low','Rule is disabled','Disabled rules accumulate; remove them once confirmed unneeded.'],
+ ['R14','low','Missing description or tags','Descriptions and tags support audits and change review.'],
+ ['R15','low','Placeholder-style rule name','Names such as test, temp or rule1 indicate rules that were never finalized.'],
+ ['R16','high','Rule shadowed by an earlier rule with a different action','Later rule can never match; policy intent is not being enforced.'],
+ ['R17','medium','Rule redundant with an earlier rule (same action)','Later rule never matches; remove or reorder it.'],
+ ['R18','medium','Deny rule without logging','Blocked attempts are useful security telemetry; log denies at session end.'],
+ ['R19','low','Allow rule without User-ID match','Where User-ID is deployed, bind sensitive access to users or groups rather than addresses alone.'],
+ ['R21','medium','Required ownership / audit tags missing or malformed','Policy requires a team:<email> contact tag plus month:<Month> and year:<YYYY> tags recording the last review.'],
+ ['R22','low','Rule review is stale','The month:/year: tags place the last review beyond the configured review window.'],
+ ['R20','medium','Audit comment is not a bare ITSM ticket number (INC / CRQ / WO / TSK)','Change-control policy: the audit comment holds the authorizing ticket number and nothing else. Only verifiable on candidate exports that carry pending audit comments.'],
+ ['R23','low','Description contains a ticket number instead of the rule\'s purpose','The description should explain what the rule is intended to do; ticket references belong in the audit comment.'],
+ ['B04','low','Export carries no audit comments; ticket compliance not verified','Audit comments are stored in the audit comment archive, not the running config. Verify them from the archive or against a candidate export.'],
+ ['B01','medium','No explicit logged cleanup (deny all) rule at the end of the rulebase','Make the implicit interzone deny explicit, logged and forwarded.'],
+ ['B02','medium','Default interzone rule does not log','interzone-default drops silently; enable log at session end.'],
+ ['B03','low','Default intrazone rule allows without profiles or logging','intrazone-default permits all intra-zone traffic uninspected.'],
+];
+const CHECK_MAP=Object.fromEntries(CHECKS.map(c=>[c[0],{id:c[0],sev:c[1],title:c[2],basis:c[3]}]));
+(function fillRef(){
+  const tb=$('#checkTable tbody');
+  tb.innerHTML=CHECKS.map(c=>`<tr><td><code>${c[0]}</code></td><td><span class="sev ${c[1]}">${SEV_LABEL[c[1]]}</span></td><td>${esc(c[2])}</td><td class="muted">${esc(c[3])}</td></tr>`).join('');
+})();
+
+/* ---------- Parsing ---------- */
+function members(el,tag){
+  const n=el?el.querySelector(':scope > '+tag):null;
+  if(!n) return [];
+  const ms=[...n.children].filter(c=>c.tagName==='member').map(c=>c.textContent.trim());
+  if(!ms.length && n.textContent.trim()) return [n.textContent.trim()];
+  return ms;
+}
+function text(el,tag){const n=el?el.querySelector(':scope > '+tag):null;return n?n.textContent.trim():'';}
+function parseRule(entry,index){
+  const ps=entry.querySelector(':scope > profile-setting');
+  let profileGroup=null,profiles=null;
+  if(ps){
+    const g=ps.querySelector(':scope > group');
+    if(g) profileGroup=members(ps,'group');
+    const pr=ps.querySelector(':scope > profiles');
+    if(pr){profiles={};for(const c of pr.children){profiles[c.tagName]=[...c.children].map(m=>m.textContent.trim());}}
+  }
+  const opt=entry.querySelector(':scope > option');
+  return {
+    index, name:entry.getAttribute('name')||'(unnamed)',
+    from:members(entry,'from'), to:members(entry,'to'),
+    source:members(entry,'source'), destination:members(entry,'destination'),
+    user:members(entry,'source-user'), application:members(entry,'application'),
+    service:members(entry,'service'), category:members(entry,'category'),
+    action:text(entry,'action')||'allow',
+    logStart:text(entry,'log-start')==='yes',
+    logEnd:text(entry,'log-end')!=='no',
+    logSetting:text(entry,'log-setting'),
+    disabled:text(entry,'disabled')==='yes',
+    description:text(entry,'description'), tags:members(entry,'tag'),
+    negateSource:text(entry,'negate-source')==='yes', negateDest:text(entry,'negate-destination')==='yes',
+    ruleType:text(entry,'rule-type')||'universal',
+    dsri:opt?text(opt,'disable-server-response-inspection')==='yes':false,
+    profileGroup, profiles, schedule:text(entry,'schedule'),
+    auditComment:text(entry,'audit-comment')
+  };
+}
+function parseDefaultRules(container){
+  const out={};
+  const d=container.querySelector(':scope > default-security-rules > rules');
+  if(!d) return out;
+  for(const e of d.querySelectorAll(':scope > entry')){
+    out[e.getAttribute('name')]={action:text(e,'action'),logEnd:text(e,'log-end')==='yes',hasProfiles:!!e.querySelector(':scope > profile-setting'),logSetting:text(e,'log-setting')};
+  }
+  return out;
+}
+function rulesFrom(container){
+  const r=container.querySelector(':scope > security > rules');
+  return r?[...r.querySelectorAll(':scope > entry')].map(parseRule):[];
+}
+function q(name){return /^[A-Za-z0-9_.-]+$/.test(name)?name:'"'+name.replace(/"/g,'\\"')+'"';}
+function parseConfig(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'application/xml');
+  if(doc.querySelector('parsererror')) throw new Error('The file is not well-formed XML: '+doc.querySelector('parsererror').textContent.split('\n')[0]);
+  const rulebases=[]; let platform='firewall';
+  const devEntries=[...doc.querySelectorAll('config > devices > entry')];
+  for(const dev of devEntries){
+    const dgs=[...dev.querySelectorAll(':scope > device-group > entry')];
+    if(dgs.length){
+      platform='panorama';
+      for(const dg of dgs){
+        const dgName=dg.getAttribute('name');
+        for(const kind of ['pre-rulebase','post-rulebase']){
+          const rb=dg.querySelector(':scope > '+kind); if(!rb) continue;
+          const rules=rulesFrom(rb);
+          const prefix=`set device-group ${q(dgName)} ${kind}`;
+          rulebases.push({label:`Device group ${dgName} · ${kind}`,prefix,rules,isTerminal:kind==='post-rulebase',defaults:parseDefaultRules(rb),defaultPrefix:prefix});
+        }
+      }
+    }
+    const vsyses=[...dev.querySelectorAll(':scope > vsys > entry')];
+    for(const v of vsyses){
+      const rb=v.querySelector(':scope > rulebase'); if(!rb) continue;
+      const vName=v.getAttribute('name');
+      const multi=vsyses.length>1;
+      const prefix=multi?`set vsys ${vName} rulebase`:'set rulebase';
+      rulebases.push({label:multi?`Firewall · ${vName}`:'Firewall rulebase',prefix,rules:rulesFrom(rb),isTerminal:true,defaults:parseDefaultRules(rb),defaultPrefix:prefix});
+    }
+  }
+  const shared=doc.querySelector('config > shared');
+  if(shared){
+    for(const kind of ['pre-rulebase','post-rulebase']){
+      const rb=shared.querySelector(':scope > '+kind); if(!rb) continue;
+      const rules=rulesFrom(rb); if(!rules.length) continue;
+      platform='panorama';
+      rulebases.unshift({label:`Shared · ${kind}`,prefix:`set shared ${kind}`,rules,isTerminal:false,defaults:{},defaultPrefix:`set shared ${kind}`});
+    }
+  }
+  // Fallback: a bare <rulebase> or <security> fragment
+  if(!rulebases.length){
+    const rb=doc.querySelector('rulebase')||doc.documentElement;
+    const rules=rulesFrom(rb);
+    if(rules.length) rulebases.push({label:'Rulebase',prefix:'set rulebase',rules,isTerminal:true,defaults:parseDefaultRules(rb),defaultPrefix:'set rulebase'});
+  }
+  // Profile groups present in config (for hints)
+  const groups=[...doc.querySelectorAll('profile-group > entry')].map(e=>e.getAttribute('name'));
+  const lfps=[...doc.querySelectorAll('log-settings > profiles > entry')].map(e=>e.getAttribute('name'));
+  // Tag object definitions (vsys/shared/device-group <tag><entry name=…>), not rule <tag><member> lists
+  const tagObjects=new Set([...doc.querySelectorAll('tag > entry[name]')].map(e=>e.getAttribute('name')));
+  return {platform,rulebases,groups,lfps,tagObjects};
+}
+
+/* ---------- Analysis ---------- */
+const PROFILE_TYPES=[['virus','Antivirus'],['spyware','Anti-Spyware'],['vulnerability','Vulnerability Protection'],['url-filtering','URL Filtering'],['wildfire-analysis','WildFire Analysis'],['file-blocking','File Blocking']];
+const isAny=a=>!a.length||a.includes('any');
+const isAllow=r=>r.action==='allow';
+function covers(a,b){ // does rule a cover rule b (name-based)
+  const f=['from','to','source','destination','user','application','service','category'];
+  for(const k of f){
+    const A=a[k],B=b[k];
+    if(k==='service'){ if(A.includes('any')) continue; if(isAny(B)) return false; }
+    else { if(isAny(A)) continue; if(isAny(B)) return false; }
+    if(!B.every(x=>A.includes(x))) return false;
+  }
+  if(a.negateSource!==b.negateSource||a.negateDest!==b.negateDest) return false;
+  if(a.ruleType!=='universal'&&a.ruleType!==b.ruleType) return false;
+  if(a.schedule) return false;
+  return true;
+}
+function analyze(cfg,opts){
+  const out={rulebases:[],counts:{critical:0,high:0,medium:0,low:0},rulesTotal:0,rulesClean:0};
+  for(const rb of cfg.rulebases){
+    const R=rb.prefix+' security rules';
+    const rbResult={label:rb.label,prefix:rb.prefix,rules:[],findings:[]};
+    const enabled=rb.rules.filter(r=>!r.disabled);
+    rb.hasAuditComments=rb.rules.some(r=>r.auditComment);
+    if(opts.ticketRe&&!rb.hasAuditComments&&rb.rules.length) rbResult.findings.push({...CHECK_MAP['B04'],detail:'Open Policies > Security and review the Audit Comment Archive for each rule, or re-run this analysis on a candidate config with pending changes.',cli:[]});
+    for(const r of rb.rules){
+      const F=[]; const P=`${R} ${q(r.name)}`; const PP=P.replace(/^set /,'');
+      const add=(id,cli,detail)=>F.push({...CHECK_MAP[id],cli:cli||[],detail:detail||''});
+      if(r.disabled){
+        if(opts.docs) add('R13',[`delete ${PP}`]);
+        const sev=F.length?F[0].sev:'pass';
+        rbResult.rules.push({rule:r,findings:F,top:sev}); out.rulesTotal++; if(!F.length) out.rulesClean++;
+        continue;
+      }
+      const appAny=isAny(r.application), svcAny=isAny(r.service)||r.service.includes('any');
+      const srcAny=isAny(r.source), dstAny=isAny(r.destination);
+      if(isAllow(r)){
+        if(appAny&&srcAny&&dstAny){
+          add('R02',[`${P} application [ <app-list> ]`,`${P} source [ <address-or-group> ]`,`${P} destination [ <address-or-group> ]`],'Use Policy Optimizer (Apps Seen) to learn the real applications before narrowing.');
+        } else if(appAny){
+          add('R01',[`${P} application [ <app-list> ]`,`${P} service application-default`],svcAny?'Service is also any.':'Port-based rule: service '+r.service.join(', ')+' is permitted for every application on that port.');
+        } else if(svcAny){
+          add('R03',[`${P} service application-default`]);
+        }
+        if(!r.profileGroup&&!r.profiles){
+          add('R04',[`${P} profile-setting group ${q(opts.group)}`]);
+        } else if(r.profiles){
+          const missing=PROFILE_TYPES.filter(([k])=>!(r.profiles[k]&&r.profiles[k].length)).map(([,n])=>n);
+          if(missing.length) add('R05',[`${P} profile-setting group ${q(opts.group)}`],'Missing: '+missing.join(', ')+'. Switching to a profile group replaces the per-profile settings.');
+        }
+        if(!appAny&&srcAny&&dstAny) add('R10',[`${P} source [ <address-or-group> ]`,`${P} destination [ <address-or-group> ]`]);
+        if(isAny(r.user)&&!srcAny&&opts.docs&&false){}
+        if(isAny(r.user)&&!isAny(r.from)&&!r.from.some(z=>/untrust|outside|internet|wan|ext/i.test(z)))
+          add('R19',[`${P} source-user [ <user-or-group> ]`],'Only applicable where User-ID is mapped for the source zones ('+r.from.join(', ')+').');
+      } else {
+        if(!r.logEnd) add('R18',[`${P} log-end yes`]);
+      }
+      if(!r.logEnd&&isAllow(r)) add('R06',[`${P} log-end yes`]);
+      if(!r.logSetting) add('R07',[`${P} log-setting ${q(opts.logFwd)}`]);
+      if(r.logStart) add('R08',[`${P} log-start no`]);
+      const zoneAny=[];
+      if(isAny(r.from)) zoneAny.push(`${P} from [ <zone> ]`);
+      if(isAny(r.to)) zoneAny.push(`${P} to [ <zone> ]`);
+      if(zoneAny.length) add('R09',zoneAny,(isAny(r.from)?'Source zone any. ':'')+(isAny(r.to)?'Destination zone any.':''));
+      if(r.negateSource||r.negateDest) add('R11',[...(r.negateSource?[`${P} negate-source no`,`${P} source [ <explicit-objects> ]`]:[]),...(r.negateDest?[`${P} negate-destination no`,`${P} destination [ <explicit-objects> ]`]:[])]);
+      if(r.dsri) add('R12',[`${P} option disable-server-response-inspection no`]);
+      if(opts.docs){
+        const doc=[];
+        if(!r.description) doc.push(`${P} description "<purpose, owner, ticket>"`);
+        if(!r.tags.length) doc.push(`${P} tag [ <tag> ]`);
+        if(doc.length) add('R14',doc,(!r.description?'No description. ':'')+(!r.tags.length?'No tags.':''));
+        if(/^(test|temp|tmp|new|rule)[\s_-]*\d*$|^(test|temp|tmp)\b/i.test(r.name)) add('R15',[`rename ${PP} to <Descriptive-Name>`]);
+      }
+      if(opts.reqTags){
+        const MONTHS=['january','february','march','april','may','june','july','august','september','october','november','december'];
+        const tagPrefix=rb.prefix.replace(/ (pre-|post-)?rulebase$/,'')+' tag';
+        const problems=[], missing=[];
+        const teamTags=r.tags.filter(t=>/^team:/i.test(t));
+        const monthTags=r.tags.filter(t=>/^month:/i.test(t));
+        const yearTags=r.tags.filter(t=>/^year:/i.test(t));
+        if(!teamTags.length) missing.push(`team:${opts.teamEx}`);
+        else if(!teamTags.some(t=>/^team:[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(t))) problems.push(`team tag "${teamTags[0]}" is not an email address`);
+        let monthIdx=-1, yearNum=NaN;
+        if(!monthTags.length) missing.push(`month:${opts.monthEx}`);
+        else { monthIdx=MONTHS.indexOf(monthTags[0].slice(6).toLowerCase()); if(monthIdx<0) problems.push(`month tag "${monthTags[0]}" is not a month name`); }
+        if(!yearTags.length) missing.push(`year:${opts.yearEx}`);
+        else { yearNum=parseInt(yearTags[0].slice(5),10); if(!/^year:\d{4}$/i.test(yearTags[0])||yearNum<2000||yearNum>2100) problems.push(`year tag "${yearTags[0]}" is not a four-digit year`); }
+        if(teamTags.length>1||monthTags.length>1||yearTags.length>1) problems.push('more than one team/month/year tag on the rule');
+        if(missing.length||problems.length){
+          const cli=[];
+          const createTags=missing.filter(t=>!cfg.tagObjects.has(t));
+          if(createTags.length){cli.push('# tag objects must exist before they can be applied (skip any already defined)');for(const t of createTags) cli.push(`${tagPrefix} ${q(t)}`);}
+          if(missing.length) cli.push(`${P} tag [ ${missing.map(q).join(' ')} ]`);
+          const bad=[...teamTags,...monthTags,...yearTags].filter(t=>problems.some(p=>p.includes(`"${t}"`)));
+          for(const t of bad) cli.push(`delete ${PP} tag ${q(t)}`);
+          const repl=[];
+          if(bad.some(t=>/^team:/i.test(t))) repl.push(`team:${opts.teamEx}`);
+          if(bad.some(t=>/^month:/i.test(t))) repl.push(`month:${opts.monthEx}`);
+          if(bad.some(t=>/^year:/i.test(t))) repl.push(`year:${opts.yearEx}`);
+          if(repl.length){for(const t of repl.filter(t=>!cfg.tagObjects.has(t)&&!missing.includes(t))) cli.push(`${tagPrefix} ${q(t)}`);cli.push(`${P} tag [ ${repl.map(q).join(' ')} ]`);}
+          add('R21',cli,(missing.length?'Missing: '+missing.map(t=>t.split(':')[0]+':').join(' ')+'. ':'')+(problems.length?problems.join('; ')+'.':''));
+        } else if(opts.staleMonths>0){
+          const ageMonths=(opts.now.getFullYear()-yearNum)*12+(opts.now.getMonth()-monthIdx);
+          if(ageMonths>opts.staleMonths){
+            const fix=[];
+            if(!cfg.tagObjects.has(`month:${opts.monthEx}`)) fix.push(`${tagPrefix} ${q('month:'+opts.monthEx)}`);
+            if(!cfg.tagObjects.has(`year:${opts.yearEx}`)) fix.push(`${tagPrefix} ${q('year:'+opts.yearEx)}`);
+            fix.push(`delete ${PP} tag ${q(monthTags[0])}`,`delete ${PP} tag ${q(yearTags[0])}`,`${P} tag [ ${q('month:'+opts.monthEx)} ${q('year:'+opts.yearEx)} ]`);
+            add('R22',fix,`Last reviewed ${monthTags[0].slice(6)} ${yearNum}, ${ageMonths} months ago (window: ${opts.staleMonths}). Re-review the rule, then update the tags.`);
+          }
+        }
+      }
+      if(opts.ticketRe){
+        const exact=new RegExp('^\\s*'+opts.ticketRe.source+'\\s*$','i');
+        if(r.auditComment){
+          if(!exact.test(r.auditComment)){
+            const has=opts.ticketRe.test(r.auditComment);
+            add('R20',[`${P} audit-comment "${opts.ticketExample}"`],has?`Audit comment "${r.auditComment}" contains extra text; it must be the ticket number only.`:`Audit comment "${r.auditComment}" is not an ITSM ticket number.`);
+          }
+        }
+        if(r.description&&opts.ticketRe.test(r.description)){
+          const only=exact.test(r.description);
+          add('R23',[`${P} description "<what this rule is intended to allow or block, and for whom>"`],only?'Description is just a ticket number. The ticket belongs in the audit comment; the description should state the rule\'s purpose.':'Description contains a ticket number. Move it to the audit comment and keep the description to the rule\'s purpose.');
+        }
+      }
+      if(opts.shadow){
+        const earlier=enabled.filter(e=>e.index<r.index);
+        const shadow=earlier.find(e=>covers(e,r));
+        if(shadow){
+          if(shadow.action!==r.action) add('R16',[`move ${PP} before ${q(shadow.name)}`],`Shadowed by "${shadow.name}" (${shadow.action}). Moving it above resolves the ordering; confirm the intent first.`);
+          else add('R17',[`delete ${PP}`],`Covered by "${shadow.name}" with the same action.`);
+        }
+      }
+      F.sort((a,b)=>SEV_RANK[b.sev]-SEV_RANK[a.sev]);
+      for(const f of F) out.counts[f.sev]++;
+      rbResult.rules.push({rule:r,findings:F,top:F.length?F[0].sev:'pass'}); out.rulesTotal++; if(!F.length) out.rulesClean++;
+    }
+    // rulebase-level
+    if(rb.isTerminal){
+      const last=enabled[enabled.length-1];
+      const isCleanup=last&&!isAllow(last)&&isAny(last.source)&&isAny(last.destination)&&isAny(last.application)&&isAny(last.from)&&isAny(last.to);
+      if(!isCleanup){
+        const C=`${R} ${q(opts.cleanup)}`;
+        rbResult.findings.push({...CHECK_MAP['B01'],detail:last?`Last enabled rule is "${last.name}" (${last.action}).`:'Rulebase has no enabled rules.',cli:[`${C} from any to any source any destination any source-user any application any service any category any`,`${C} action deny log-end yes log-setting ${q(opts.logFwd)}`,`${C} description "Explicit cleanup rule - logs traffic that no earlier rule permitted"`,`move ${C.replace(/^set /,'')} bottom`]});
+      } else if(last&&(!last.logEnd||!last.logSetting)){
+        const C=`${R} ${q(last.name)}`;
+        rbResult.findings.push({...CHECK_MAP['B01'],title:'Cleanup rule is present but not fully logged',detail:`"${last.name}" closes the rulebase but ${!last.logEnd?'does not log at session end':'has no log forwarding profile'}.`,cli:[...(!last.logEnd?[`${C} log-end yes`]:[]),...(!last.logSetting?[`${C} log-setting ${q(opts.logFwd)}`]:[])]});
+      }
+      const D=`${rb.defaultPrefix} default-security-rules rules`;
+      const iz=rb.defaults['interzone-default'];
+      if(!iz||!iz.logEnd) rbResult.findings.push({...CHECK_MAP['B02'],detail:iz?'interzone-default present without logging.':'interzone-default not overridden; it does not log by default.',cli:[`${D} interzone-default log-end yes`,`${D} interzone-default log-setting ${q(opts.logFwd)}`]});
+      const ia=rb.defaults['intrazone-default'];
+      if(!ia||!ia.hasProfiles||!ia.logEnd) rbResult.findings.push({...CHECK_MAP['B03'],detail:'Apply profiles and logging, or add explicit intrazone rules and deny the rest.',cli:[`${D} intrazone-default log-end yes`,`${D} intrazone-default log-setting ${q(opts.logFwd)}`,`${D} intrazone-default profile-setting group ${q(opts.group)}`]});
+    }
+    for(const f of rbResult.findings) out.counts[f.sev]++;
+    out.rulebases.push(rbResult);
+  }
+  return out;
+}
+
+/* ---------- Rendering ---------- */
+let STATE={result:null,cfg:null,filterSev:'all',search:''};
+function fmtCli(lines){return lines.map(l=>{
+  const e=esc(l);
+  return e.replace(/^(set|delete|move|rename)\b/,'<span class="kw">$1</span>').replace(/(#.*)$/,'<span class="cmt">$1</span>');
+}).join('\n');}
+function cliBlock(lines,id){
+  return `<div class="cli" data-cli="${esc(lines.join('\n'))}"><button class="copy" type="button" data-copy>copy</button>${fmtCli(lines)}</div>`;
+}
+function tileHtml(cls,n,label){return `<div class="tile ${cls}"><div class="n">${n}</div><div class="eyebrow">${label}</div></div>`;}
+function render(){
+  const root=$('#results'); const res=STATE.result;
+  if(!res){root.innerHTML='';return;}
+  const c=res.counts; const total=c.critical+c.high+c.medium+c.low;
+  const score=Math.max(0,100-Math.round((c.critical*12+c.high*6+c.medium*2+c.low*0.5)/Math.max(1,res.rulesTotal)*10));
+  let html=`<div class="summary">
+    ${tileHtml('',res.rulesTotal,'rules analyzed')}
+    ${tileHtml('crit',c.critical,'critical')}
+    ${tileHtml('high',c.high,'high')}
+    ${tileHtml('med',c.medium,'medium')}
+    ${tileHtml('low',c.low,'low')}
+    ${tileHtml('ok',res.rulesClean,'rules with no findings')}
+    ${tileHtml(score>=80?'ok':score>=50?'med':'crit',score,'hygiene score / 100')}
+  </div>
+  <div class="filters">
+    <span class="eyebrow">Show</span>
+    ${['all','critical','high','medium','low'].map(s=>`<button class="chip" type="button" data-sev="${s}" aria-pressed="${STATE.filterSev===s}">${s==='all'?'All rules':SEV_LABEL[s]+'+'}</button>`).join('')}
+    <input class="search" id="search" placeholder="Filter by rule name, zone, app…" value="${esc(STATE.search)}">
+  </div>`;
+  const allCli=[];
+  for(const rb of res.rulebases){
+    const rows=rb.rules.filter(x=>{
+      if(STATE.filterSev!=='all'){ if(x.top==='pass') return false; if(SEV_RANK[x.top]<SEV_RANK[STATE.filterSev]) return false; }
+      if(STATE.search){const s=STATE.search.toLowerCase();const r=x.rule;const hay=[r.name,...r.from,...r.to,...r.source,...r.destination,...r.application,...r.service,r.action,...x.findings.map(f=>f.id)].join(' ').toLowerCase();if(!hay.includes(s)) return false;}
+      return true;
+    });
+    const nF=rb.rules.reduce((a,x)=>a+x.findings.length,0)+rb.findings.length;
+    html+=`<section class="rb"><div class="head"><div><h2>${esc(rb.label)}</h2><code>${esc(rb.prefix)} security rules …</code></div><div class="muted">${rb.rules.length} rules · ${nF} findings · showing ${rows.length}</div></div>`;
+    if(rows.length){
+      html+=`<div class="tablewrap"><table><thead><tr><th>#</th><th>Rule</th><th>From → To</th><th>Source → Destination</th><th>Application / Service</th><th>Action</th><th>Findings</th></tr></thead><tbody>`;
+      for(const x of rows){
+        const r=x.rule; const key=`${rb.prefix}|${r.name}`;
+        html+=`<tr class="rule ${r.disabled?'disabled':''}" data-key="${esc(key)}" tabindex="0">
+          <td class="idx">${r.index+1}</td>
+          <td><div class="name">${esc(r.name)}</div>${r.description?`<div class="cell">${esc(r.description.slice(0,80))}${r.description.length>80?'…':''}</div>`:''}</td>
+          <td><div class="cell">${esc(r.from.join(', ')||'any')} → ${esc(r.to.join(', ')||'any')}</div></td>
+          <td><div class="cell">${r.negateSource?'NOT ':''}${esc(r.source.join(', ')||'any')} → ${r.negateDest?'NOT ':''}${esc(r.destination.join(', ')||'any')}</div></td>
+          <td><div class="cell">${esc(r.application.join(', ')||'any')} / ${esc(r.service.join(', ')||'any')}</div></td>
+          <td><span class="act ${esc(r.action)}">${esc(r.action)}</span></td>
+          <td>${x.findings.length?`<span class="sev ${x.top}">${SEV_LABEL[x.top]}</span> <span class="muted">${x.findings.length}</span>`:'<span class="sev pass">Pass</span>'}</td></tr>`;
+        const lines=x.findings.flatMap(f=>f.cli);
+        if(lines.length) allCli.push(`# ${rb.label} / ${r.name}: ${x.findings.map(f=>f.id).join(', ')}`,...lines,'');
+        html+=`<tr class="detail" data-for="${esc(key)}" hidden><td colspan="7">`;
+        if(x.findings.length){
+          html+=`<div class="findings">`+x.findings.map(f=>`<div class="finding"><span class="sev ${f.sev}">${SEV_LABEL[f.sev]}</span><div><div class="what">${esc(f.id)} · ${esc(f.title)}</div><div class="why">${esc(f.basis)}${f.detail?' '+esc(f.detail):''}</div>${f.cli.length?cliBlock(f.cli):''}</div></div>`).join('')+`</div>`;
+        } else html+=`<span class="muted">No findings for this rule.</span>`;
+        html+=`</td></tr>`;
+      }
+      html+=`</tbody></table></div>`;
+    } else html+=`<p class="note">No rules match the current filter.</p>`;
+    if(rb.findings.length){
+      html+=`<div class="rb-findings">`+rb.findings.map(f=>{
+        allCli.push(`# ${rb.label}: ${f.id} ${f.title}`,...f.cli,'');
+        return `<div class="rb-finding ${f.sev}"><div class="row"><span class="sev ${f.sev}">${SEV_LABEL[f.sev]}</span><strong>${esc(f.id)} · ${esc(f.title)}</strong></div><div class="why muted">${esc(f.basis)} ${esc(f.detail)}</div>${f.cli.length?cliBlock(f.cli):''}</div>`;}).join('')+`</div>`;
+    }
+    html+=`</section>`;
+  }
+  const script=['# PAN-OS remediation script generated by PAN-OS Rulebase Audit','# Review every line; replace <placeholders> with real objects before use.','# Commands assume configure mode. Commit separately after validation.','configure','',...allCli,'# validate full','# commit description "Rulebase best-practice remediation"'];
+  html+=`<section class="script"><div class="head"><h2>Consolidated remediation script</h2><p class="note">${allCli.filter(l=>l&&!l.startsWith('#')).length} commands across all rulebases, in rule order. Placeholders in angle brackets need real values.</p></div>${cliBlock(script)}</section>`;
+  root.innerHTML=html;
+  root.querySelectorAll('tr.rule').forEach(tr=>{
+    const toggle=()=>{const d=root.querySelector(`tr.detail[data-for="${CSS.escape(tr.dataset.key)}"]`);if(d) d.hidden=!d.hidden;};
+    tr.addEventListener('click',toggle);
+    tr.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle();}});
+  });
+  root.querySelectorAll('[data-sev]').forEach(b=>b.addEventListener('click',()=>{STATE.filterSev=b.dataset.sev;render();}));
+  const s=$('#search'); if(s){s.addEventListener('input',()=>{STATE.search=s.value;const pos=s.selectionStart;render();const n=$('#search');if(n){n.focus();n.setSelectionRange(pos,pos);}});}
+  root.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',e=>{
+    e.stopPropagation(); const txt=b.parentElement.dataset.cli;
+    const done=()=>{const t=$('#toast');t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1200);};
+    try{navigator.clipboard.writeText(txt).then(done,()=>fallback());}catch(_){fallback();}
+    function fallback(){const r=document.createRange();r.selectNodeContents(b.parentElement);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);}
+  }));
+}
+
+/* ---------- Wiring ---------- */
+function run(){
+  const xml=$('#xml').value.trim();
+  if(!xml){$('#status').textContent='nothing to analyze';return;}
+  try{
+    const cfg=parseConfig(xml);
+    let ticketRe=null;
+    if($('#optTicketOn').checked){
+      const src=$('#optTicket').value.trim()||'\\b(INC|CRQ|WO|TSK)\\d{5,}\\b';
+      try{ticketRe=new RegExp(src,'i');}catch(e){throw new Error('ITSM ticket pattern is not a valid regular expression: '+e.message);}
+    }
+    const opts={group:$('#optGroup').value.trim()||'BP-Profile-Group',logFwd:$('#optLogFwd').value.trim()||'default',cleanup:$('#optCleanup').value.trim()||'Cleanup-Deny-All',docs:$('#optDocs').checked,shadow:$('#optShadow').checked,ticketRe,ticketExample:$('#optTicketEx').value.trim()||'CRQ0000000'};
+    const now=new Date();
+    opts.now=now; opts.reqTags=$('#optTagsOn').checked;
+    opts.teamEx=$('#optTeam').value.trim()||'example@example.com';
+    opts.monthEx=now.toLocaleString('en-US',{month:'long'}); opts.yearEx=String(now.getFullYear());
+    opts.staleMonths=Math.max(0,parseInt($('#optStale').value,10)||0);
+    STATE.cfg=cfg; STATE.result=analyze(cfg,opts);
+    const n=cfg.rulebases.reduce((a,r)=>a+r.rules.length,0);
+    $('#status').textContent=`${cfg.platform} · ${cfg.rulebases.length} rulebase${cfg.rulebases.length===1?'':'s'} · ${n} rules${cfg.groups.length?' · profile groups: '+cfg.groups.join(', '):''}${cfg.lfps.length?' · log fwd: '+cfg.lfps.join(', '):''}`;
+    if(!n){$('#results').innerHTML='<div class="empty">No security rules found. Expected <code>devices/entry/vsys/entry/rulebase/security/rules</code> (firewall) or <code>device-group/entry/pre-rulebase</code> (Panorama).</div>';return;}
+    render();
+  }catch(err){$('#status').textContent='error';$('#results').innerHTML=`<div class="empty">${esc(err.message)}</div>`;}
+}
+$('#run').addEventListener('click',run);
+['#optGroup','#optLogFwd','#optCleanup','#optDocs','#optShadow','#optTicket','#optTicketEx','#optTicketOn','#optTeam','#optStale','#optTagsOn'].forEach(s=>$(s).addEventListener('change',()=>{if(STATE.result) run();}));
+$('#clear').addEventListener('click',()=>{$('#xml').value='';STATE.result=null;render();$('#status').textContent='no config loaded';});
+const drop=$('#drop'), file=$('#file');
+drop.addEventListener('click',()=>file.click());
+drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click();}});
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f) readFile(f);});
+file.addEventListener('change',()=>{if(file.files[0]) readFile(file.files[0]);});
+function readFile(f){const r=new FileReader();r.onload=()=>{$('#xml').value=r.result;$('#status').textContent='loaded '+f.name+' ('+Math.round(f.size/1024)+' KB)';run();};r.readAsText(f);}
+
+const SAMPLE=`<?xml version="1.0"?>
+<config version="11.1.0" urldb="paloaltonetworks">
+  <devices><entry name="localhost.localdomain">
+    <vsys><entry name="vsys1">
+      <tag>
+        <entry name="team:netsec@example.com"/><entry name="month:September"/><entry name="month:March"/><entry name="year:2026"/><entry name="year:2024"/>
+        <entry name="Security"/><entry name="Users"/><entry name="DMZ"/><entry name="NetEng"/><entry name="Guest"/>
+      </tag>
+      <profile-group><entry name="BP-Profile-Group"/></profile-group>
+      <log-settings><profiles><entry name="Default-LFP"/></profiles></log-settings>
+      <rulebase>
+        <security><rules>
+          <entry name="Block-Known-Bad">
+            <from><member>any</member></from><to><member>any</member></to>
+            <source><member>any</member></source><destination><member>EDL-Known-Malicious</member></destination>
+            <source-user><member>any</member></source-user><application><member>any</member></application>
+            <service><member>any</member></service><action>drop</action>
+            <log-end>no</log-end><description>Drop traffic to malicious EDL</description><tag><member>Security</member></tag>
+          </entry>
+          <entry name="Users-to-Internet">
+            <from><member>Trust</member></from><to><member>Untrust</member></to>
+            <source><member>Corp-Users</member></source><destination><member>any</member></destination>
+            <source-user><member>any</member></source-user>
+            <application><member>web-browsing</member><member>ssl</member><member>dns</member></application>
+            <service><member>any</member></service><action>allow</action>
+            <profile-setting><profiles><virus><member>default</member></virus><spyware><member>default</member></spyware><url-filtering><member>default</member></url-filtering></profiles></profile-setting>
+            <log-start>yes</log-start><description>General user internet access</description><tag><member>Users</member></tag>
+          </entry>
+          <entry name="DMZ-Web-Inbound">
+            <from><member>Untrust</member></from><to><member>DMZ</member></to>
+            <source><member>any</member></source><destination><member>Web-VIP</member></destination>
+            <source-user><member>any</member></source-user><application><member>any</member></application>
+            <service><member>service-https</member></service><action>allow</action>
+            <profile-setting><group><member>BP-Profile-Group</member></group></profile-setting>
+            <log-setting>Default-LFP</log-setting>
+          </entry>
+          <entry name="DMZ-to-DB">
+            <from><member>DMZ</member></from><to><member>Data</member></to>
+            <source><member>Web-Servers</member></source><destination><member>DB-Servers</member></destination>
+            <source-user><member>any</member></source-user><application><member>mssql-db</member></application>
+            <service><member>application-default</member></service><action>allow</action>
+            <profile-setting><group><member>BP-Profile-Group</member></group></profile-setting>
+            <log-setting>Default-LFP</log-setting><description>Web tier to SQL</description><audit-comment>CRQ0048213</audit-comment><tag><member>DMZ</member><member>team:netsec@example.com</member><member>month:September</member><member>year:2026</member></tag>
+          </entry>
+          <entry name="temp rule 3">
+            <from><member>Trust</member></from><to><member>Untrust</member></to>
+            <source><member>any</member></source><destination><member>any</member></destination>
+            <source-user><member>any</member></source-user><application><member>any</member></application>
+            <service><member>any</member></service><action>allow</action>
+            <log-end>no</log-end>
+          </entry>
+          <entry name="Trust-to-Untrust-SSH">
+            <from><member>Trust</member></from><to><member>Untrust</member></to>
+            <source><member>NetEng-Jump</member></source><destination><member>any</member></destination>
+            <source-user><member>any</member></source-user><application><member>ssh</member></application>
+            <service><member>application-default</member></service><action>allow</action>
+            <profile-setting><group><member>BP-Profile-Group</member></group></profile-setting>
+            <log-setting>Default-LFP</log-setting><description>Jump host SSH out</description><audit-comment>WO0031177 - added per NetEng request</audit-comment><tag><member>NetEng</member><member>team:netsec@example.com</member><member>month:March</member><member>year:2024</member></tag>
+          </entry>
+          <entry name="Old-VPN-Access">
+            <from><member>VPN</member></from><to><member>Trust</member></to>
+            <source><member>VPN-Pool</member></source><destination><member>any</member></destination>
+            <source-user><member>any</member></source-user><application><member>any</member></application>
+            <service><member>any</member></service><action>allow</action>
+            <disabled>yes</disabled><description>Legacy GlobalProtect pool</description>
+          </entry>
+          <entry name="Guest-Block-Internal">
+            <from><member>Guest</member></from><to><member>Trust</member></to>
+            <source><member>any</member></source><destination><member>RFC1918</member></destination>
+            <source-user><member>any</member></source-user><application><member>any</member></application>
+            <service><member>any</member></service><action>deny</action>
+            <log-setting>Default-LFP</log-setting><description>INC0098112</description><audit-comment>INC0098112</audit-comment><tag><member>Guest</member><member>team:netsec</member><member>month:Sept</member><member>year:2026</member></tag>
+          </entry>
+        </rules></security>
+        <default-security-rules><rules>
+          <entry name="interzone-default"><action>deny</action><log-end>no</log-end></entry>
+        </rules></default-security-rules>
+      </rulebase>
+    </entry></vsys>
+  </entry></devices>
+</config>`;
+$('#loadSample').addEventListener('click',()=>{$('#xml').value=SAMPLE;$('#status').textContent='example config loaded (not your data)';run();});
+$('#loadSample').click();
+})();
+</script>
+</body>
+</html>

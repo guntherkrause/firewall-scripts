@@ -1,0 +1,11 @@
+# Never commit real firewall configuration. Exports contain hostnames, addresses,
+# policy and sometimes hashed credentials. Sanitized samples go in a samples/ folder.
+*.xml
+!**/samples/*.xml
+running-config*
+candidate-config*
+*.cfg
+*.log
+.env
+node_modules/
+.DS_Store
