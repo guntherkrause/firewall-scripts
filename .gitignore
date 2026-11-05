@@ -9,3 +9,6 @@ candidate-config*
 .env
 node_modules/
 .DS_Store
+# Tech support files contain the full config and logs.
+*.tgz
+*.tar.gz

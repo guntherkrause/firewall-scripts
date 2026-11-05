@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Offline by design: this policy blocks every network request. All parsing happens in this tab. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:">
+<title>TSF Log Review</title>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#ffffff;--panel2:#eef0f3;--fg:#1b2027;--muted:#5c6570;--line:#d9dde3;
+  --accent:#0a66c2;--accent-fg:#fff;--mark:#ffe17a;--mark-fg:#1b2027;--tgt:#dcebff;--pin:#fff3d6;
+  --high:#c0392b;--med:#b7700b;--low:#6b7480;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0e1115;--panel:#151a20;--panel2:#1c222a;--fg:#e2e6eb;--muted:#909cab;--line:#29303a;
+  --accent:#4d9ef0;--accent-fg:#0a0d11;--mark:#7a5c00;--mark-fg:#fff2c2;--tgt:#1c3352;--pin:#3a2f12;
+  --high:#ff6b5b;--med:#f0b24a;--low:#909cab;
+}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.4 var(--sans);display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{font-weight:650;font-size:15px;white-space:nowrap}
+.muted{color:var(--muted)}
+.sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-fg);font:inherit;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+button.link{background:none;border:0;color:var(--accent);cursor:pointer;font:inherit;padding:0}
+nav{display:flex;gap:2px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+nav button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 12px;color:var(--muted);font:inherit;cursor:pointer;white-space:nowrap}
+nav button.on{color:var(--fg);border-bottom-color:var(--accent);font-weight:600}
+nav button:disabled{opacity:.4;cursor:default}
+main{flex:1;min-height:0;position:relative}
+main>section{position:absolute;inset:0;overflow:auto;padding:16px}
+main>section.split{display:grid;grid-template-columns:320px 1fr;padding:0;overflow:hidden}
+main>section[hidden]{display:none!important}
+.pane{overflow:auto;min-height:0;min-width:0}
+.pane.side{border-right:1px solid var(--line);background:var(--panel)}
+.pane.body{display:flex;flex-direction:column}
+input[type=text],input[type=search],input[type=number],input[type=datetime-local],textarea{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+textarea{width:100%;font-size:13px}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.toolbar label{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:13px}
+h2{font-size:15px;margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+table{border-collapse:collapse;width:100%}
+td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px}
+td.k{color:var(--muted);white-space:nowrap;width:1%}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mono{font-family:var(--mono);font-size:12.5px}
+.sev{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:9px;border:1px solid currentColor;text-transform:uppercase;letter-spacing:.03em}
+.sev.high{color:var(--high)}.sev.med{color:var(--med)}.sev.low{color:var(--low)}
+tr.clk{cursor:pointer}tr.clk:hover td{background:var(--panel2)}
+.zero td{opacity:.5}
+/* welcome */
+#t-welcome{display:flex;align-items:center;justify-content:center}
+.drop{max-width:560px;text-align:center;border:2px dashed var(--line);border-radius:12px;padding:40px 28px;background:var(--panel)}
+.drop.over{border-color:var(--accent)}
+.drop h1{font-size:20px;margin:0 0 8px}
+.drop p{color:var(--muted);margin:8px 0}
+/* lists */
+.rule{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.rule:hover{background:var(--panel2)}
+.rule.on{background:var(--tgt)}
+.rule .t{flex:1;min-width:0}
+.rule .c{font-variant-numeric:tabular-nums;color:var(--muted)}
+.rule.zero{opacity:.45}
+.hits{flex:1;overflow:auto}
+.hit{display:grid;grid-template-columns:150px 230px 1fr auto;gap:10px;padding:4px 12px;border-bottom:1px solid var(--line);cursor:pointer;align-items:start}
+.hit:hover{background:var(--panel2)}
+.hit .ts,.hit .fp{color:var(--muted);font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hit .tx{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+.hit .pinb{opacity:.35;background:none;border:0;cursor:pointer;color:var(--fg);font-size:12px}
+.hit:hover .pinb,.hit .pinb.on{opacity:1}
+.hit .pinb.on{color:var(--med)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.chip{font-size:12px;font-family:var(--mono);padding:2px 8px;border-radius:10px;border:1px solid var(--line);background:var(--panel);cursor:pointer;color:var(--fg)}
+.chip.on{border-color:var(--accent);color:var(--accent)}
+.note{padding:8px 12px;color:var(--muted);font-size:12.5px}
+mark{background:var(--mark);color:var(--mark-fg);border-radius:2px}
+/* tree */
+.tree{font-size:13px;padding:6px 0}
+.tree details{padding-left:12px}
+.tree>details{padding-left:4px}
+.tree summary{cursor:pointer;padding:2px 4px;white-space:nowrap;list-style:none}
+.tree summary::before{content:"▸ ";color:var(--muted)}
+.tree details[open]>summary::before{content:"▾ "}
+.tree summary .c{color:var(--muted);font-size:11px}
+.file{display:flex;gap:6px;padding:2px 4px 2px 22px;cursor:pointer;white-space:nowrap}
+.file:hover{background:var(--panel2)}
+.file.sel{background:var(--tgt)}
+.file .nm{overflow:hidden;text-overflow:ellipsis}
+.file .sz{color:var(--muted);font-size:11px;margin-left:auto}
+.badge{font-size:10.5px;padding:0 5px;border-radius:8px;background:var(--med);color:var(--accent-fg);font-weight:600}
+.flat .file{padding-left:8px}
+/* viewer */
+#vwrap{flex:1;overflow:auto;position:relative;background:var(--panel);font-family:var(--mono);font-size:12.5px}
+#vspace{width:1px}
+#vrows{position:absolute;top:0;left:0;min-width:100%}
+.ln{height:18px;line-height:18px;white-space:pre;display:flex}
+.ln .no{flex:none;width:72px;text-align:right;padding-right:10px;color:var(--muted);user-select:none;cursor:pointer;position:sticky;left:0;background:var(--panel);border-right:1px solid var(--line);margin-right:8px}
+.ln .no:hover{color:var(--accent)}
+.ln.tgt{background:var(--tgt)}
+.ln.pinned{background:var(--pin)}
+.ln.pinned .no{color:var(--med);font-weight:700}
+#vmsg{padding:24px;color:var(--muted)}
+#vpath{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50vw}
+/* timeline */
+#tlChart{width:100%;height:140px;display:block;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+#tlChart rect{cursor:pointer}
+#tlChart rect:hover{opacity:.7}
+.axis{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:4px 2px 10px}
+.rtoggles{display:flex;flex-wrap:wrap;gap:6px 14px;margin:8px 0 12px}
+.rtoggles label{display:inline-flex;gap:4px;align-items:center;font-size:13px}
+.legend{display:inline-flex;gap:12px;font-size:12px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+/* notes */
+.pinitem{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.pinitem .hd{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.pinitem pre{margin:0 0 8px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;word-break:break-all;background:var(--panel2);padding:6px 8px;border-radius:4px}
+/* busy */
+#busy{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:10}
+#busy[hidden]{display:none}
+#busy div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 24px;min-width:280px;text-align:center}
+@media (max-width:760px){
+  main>section.split{grid-template-columns:1fr;grid-template-rows:40% 60%}
+  .pane.side{border-right:0;border-bottom:1px solid var(--line)}
+  .hit{grid-template-columns:1fr auto}
+  .hit .ts,.hit .fp{grid-column:1/-1}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">TSF Log Review</div>
+  <div id="arch" class="muted">No file loaded</div>
+  <div class="sp"></div>
+  <label class="btn">Open TSF…<input type="file" id="fileIn" accept=".tgz,.gz,.tar" hidden></label>
+  <button id="expBtn" class="btn ghost" disabled>Export notes</button>
+</header>
+<nav id="tabs">
+  <button data-tab="overview" disabled>Overview</button>
+  <button data-tab="triage" disabled>Triage</button>
+  <button data-tab="timeline" disabled>Timeline</button>
+  <button data-tab="files" disabled>Files</button>
+  <button data-tab="search" disabled>Search</button>
+  <button data-tab="notes" disabled>Notes <span id="pinCount" class="muted"></span></button>
+</nav>
+<main>
+  <section id="t-welcome">
+    <div class="drop" id="drop">
+      <h1>Drop a Palo Alto tech support file here</h1>
+      <p>Or use <b>Open TSF…</b>. The .tgz is unpacked inside this browser tab. This page cannot make network requests, so nothing leaves the machine.</p>
+      <p class="muted" style="font-size:12.5px">Generate one from Device › Support › Generate Tech Support File, or <span class="mono">scp export tech-support</span>.</p>
+    </div>
+  </section>
+
+  <section id="t-overview" hidden></section>
+
+  <section id="t-triage" class="split" hidden>
+    <div class="pane side" id="ruleList"></div>
+    <div class="pane body">
+      <div class="toolbar">
+        <strong id="ruleTitle"></strong>
+        <div class="sp"></div>
+        <input type="search" id="hitFilter" placeholder="Filter these hits…" style="width:240px">
+      </div>
+      <div class="chips" id="ruleFiles"></div>
+      <div class="hits" id="hitList"></div>
+    </div>
+  </section>
+
+  <section id="t-timeline" hidden>
+    <div class="toolbar" style="border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+      <label>From <input type="datetime-local" id="tlFrom" step="1"></label>
+      <label>To <input type="datetime-local" id="tlTo" step="1"></label>
+      <button class="btn ghost" id="tlReset">Reset range</button>
+      <div class="sp"></div>
+      <span class="legend"><span><span class="sw" style="background:var(--high)"></span>High</span><span><span class="sw" style="background:var(--med)"></span>Medium</span><span><span class="sw" style="background:var(--low)"></span>Low</span></span>
+    </div>
+    <div class="rtoggles" id="tlRules"></div>
+    <svg id="tlChart" preserveAspectRatio="none"></svg>
+    <div class="axis"><span id="tlA0"></span><span id="tlBucket"></span><span id="tlA1"></span></div>
+    <div class="muted" id="tlCount" style="margin-bottom:6px"></div>
+    <div class="card" style="padding:0"><div id="tlList"></div></div>
+  </section>
+
+  <section id="t-files" class="split" hidden>
+    <div class="pane side">
+      <div class="toolbar"><input type="search" id="treeFilter" placeholder="Filter file names…" style="flex:1"></div>
+      <div id="tree" class="tree"></div>
+    </div>
+    <div class="pane body">
+      <div class="toolbar">
+        <span id="vpath" class="muted">Select a file</span>
+        <span id="vmeta" class="muted" style="font-size:12px"></span>
+        <div class="sp"></div>
+        <input type="search" id="vfilter" placeholder="Show only lines matching…" style="width:220px">
+        <label><input type="checkbox" id="vre"> regex</label>
+        <input type="number" id="vgoto" placeholder="Line #" style="width:90px" min="1">
+        <button class="btn ghost" id="vdl" disabled>Download</button>
+      </div>
+      <div id="vmsg" hidden></div>
+      <div id="vwrap"><div id="vspace"></div><div id="vrows"></div></div>
+      <div class="note" id="vstat"></div>
+    </div>
+  </section>
+
+  <section id="t-search" hidden>
+    <div class="toolbar" style="border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+      <input type="search" id="sq" placeholder="Search every file… (e.g. 10.20.30.40, tunnel-name, error code)" style="flex:1;min-width:240px">
+      <label><input type="checkbox" id="sre"> regex</label>
+      <label><input type="checkbox" id="scase"> match case</label>
+      <input type="text" id="spath" placeholder="Only paths containing…" style="width:190px">
+      <button class="btn" id="sgo">Search</button>
+      <button class="btn ghost" id="sstop" hidden>Stop</button>
+    </div>
+    <div class="muted" id="sstat" style="margin-bottom:8px"></div>
+    <div id="sfiles"></div>
+    <div class="card" style="padding:0"><div id="sres"></div></div>
+  </section>
+
+  <section id="t-notes" hidden></section>
+</main>
+<div id="busy" hidden><div><div id="busymsg">Working…</div></div></div>
+
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const escRe=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const tick=()=>new Promise(r=>setTimeout(r,0));
+const fmtB=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':n<1073741824?(n/1048576).toFixed(1)+' MB':(n/1073741824).toFixed(2)+' GB';
+const fmtTs=t=>t==null?'—':new Date(t).toISOString().replace('T',' ').slice(0,19);
+const base=p=>p.slice(p.lastIndexOf('/')+1);
+const fmtN=n=>n.toLocaleString();
+const TD=new TextDecoder('utf-8');
+const isGz=u=>u.length>2&&u[0]===0x1f&&u[1]===0x8b;
+async function gunzip(u8){
+  const s=new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(s).arrayBuffer());
+}
+function busy(msg){const o=$('#busy');if(msg==null){o.hidden=true;return;}o.hidden=false;$('#busymsg').textContent=msg;}
+function download(data,name,type){
+  const b=data instanceof Blob?data:new Blob([data],{type:type||'application/octet-stream'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.append(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+}
+
+/* ---------- tar ---------- */
+function rstr(u8,o,l){let e=o;const m=o+l;while(e<m&&u8[e]!==0)e++;return TD.decode(u8.subarray(o,e));}
+function roct(u8,o,l){
+  if(u8[o]&0x80){let v=0;for(let i=o+1;i<o+l;i++)v=v*256+u8[i];return v;}
+  const s=rstr(u8,o,l).trim();return s?parseInt(s,8):0;
+}
+function zeroBlock(u8,o){for(let i=o;i<o+512;i++)if(u8[i])return false;return true;}
+function chkOk(u8,o){
+  let s=0;for(let i=0;i<512;i++)s+=(i>=148&&i<156)?32:u8[o+i];
+  const st=rstr(u8,o+148,8).trim();return st!==''&&parseInt(st,8)===s;
+}
+function parsePax(s){
+  const r={};let i=0;
+  while(i<s.length){const sp=s.indexOf(' ',i);if(sp<0)break;const len=parseInt(s.slice(i,sp),10);if(!len)break;
+    const rec=s.slice(sp+1,i+len-1);const eq=rec.indexOf('=');if(eq>0)r[rec.slice(0,eq)]=rec.slice(eq+1);i+=len;}
+  return r;
+}
+/* returns false if the buffer isn't a tar archive */
+function parseTar(u8,prefix,out){
+  let off=0,longName=null,pax=null,first=true;
+  while(off+512<=u8.length){
+    if(zeroBlock(u8,off))break;
+    if(!chkOk(u8,off)){if(first)return false;break;}
+    first=false;
+    let name=rstr(u8,off,100);
+    const size=roct(u8,off+124,12),mtime=roct(u8,off+136,12);
+    const tf=u8[off+156];const type=tf?String.fromCharCode(tf):'0';
+    if(rstr(u8,off+257,6).startsWith('ustar')){const pre=rstr(u8,off+345,155);if(pre)name=pre+'/'+name;}
+    const d0=off+512;const data=u8.subarray(d0,d0+size);
+    off=d0+Math.ceil(size/512)*512;
+    if(type==='L'){longName=rstr(u8,d0,size);continue;}
+    if(type==='x'){pax=parsePax(TD.decode(data));continue;}
+    if(type==='g')continue;
+    if(longName){name=longName;longName=null;}
+    if(pax&&pax.path)name=pax.path;
+    pax=null;
+    if(type==='0'||type==='7')out.push({path:prefix+name.replace(/^\.\//,''),size,mtime,data});
+  }
+  return true;
+}
+
+/* ---------- state ---------- */
+const S={name:'',files:[],info:{},hits:[],ruleCount:{},fileHits:new Map(),pins:[],textCache:new Map(),tree:null,maxMtime:0};
+
+async function getBytes(f){
+  if(!f.gz)return f.data;
+  if(f._raw)return f._raw;
+  try{const r=await gunzip(f.data);if(r.length<64e6)f._raw=r;return r;}catch(e){f.gz=false;return f.data;}
+}
+function isBinary(b){const n=Math.min(b.length,8192);for(let i=0;i<n;i++)if(b[i]===0)return true;return false;}
+async function getText(f){
+  if(S.textCache.has(f.id))return S.textCache.get(f.id);
+  if(f.binary)return null;
+  const b=await getBytes(f);
+  if(isBinary(b)){f.binary=true;return null;}
+  const t=TD.decode(b);
+  if(t.length<4e6)S.textCache.set(f.id,t);
+  return t;
+}
+
+/* ---------- triage rules ----------
+   files: which paths a rule applies to; re: line pattern. Edit freely. */
+const RULES=[
+ {id:'crash',cat:'Crashes',sev:'high',title:'Core dumps / crash files',
+  pathOnly:/(^|\/)core\.[^/]*$|\.core(\.gz)?$|crashinfo|backtrace|\/cores?\/[^/]+$|\/crash\/[^/]+$/i},
+ {id:'proc',cat:'Processes',sev:'high',title:'Process exit / restart / signal',files:/\.log|messages/i,
+  re:/(exited abnormally|exited with (status|code) [1-9]|exited on signal|killed by signal|terminated by signal|segfault|SIGSEGV|SIGABRT|SIGBUS|core dumped|respawn|restarting (process|daemon)|(process|daemon) \S+ (died|crashed|restarted))/i},
+ {id:'oom',cat:'Resources',sev:'high',title:'Memory exhaustion',files:/./,
+  re:/(out of memory|oom-killer|oom_kill|Killed process \d+|memory (is )?(low|exhausted|depleted)|cannot allocate memory|swap.{0,30}(exhaust|full|high))/i},
+ {id:'disk',cat:'Resources',sev:'high',title:'Disk space',files:/./,
+  re:/(no space left on device|disk (usage|space).{0,40}(exceed|above|critical|full)|partition .{0,40}(full|exceed)|filesystem .{0,30}full)/i},
+ {id:'dpres',cat:'Dataplane',sev:'high',title:'Dataplane health / resource pressure',files:/(dp\d*-monitor|dp-monitor|pan_task|mprelay|brdagent|sysd|resource|mp-monitor)/i,
+  re:/(packet buffer.{0,40}(high|exhaust|full|threshold)|packet descriptor.{0,40}(high|exhaust|full)|session (table )?(full|exhaust)|resource .{0,30}(exhaust|threshold)|dataplane .{0,30}(down|unresponsive|not responding|failure|restart)|heartbeat .{0,30}(fail|miss|timeout)|internal path monitor.{0,30}fail)/i},
+ {id:'commit',cat:'Config',sev:'high',title:'Commit / validation failures',files:/(ms|configd|devsrvr|mgmtsrvr|mgmt)[^/]*\.log/i,
+  re:/(commit.{0,60}(fail|error|abort)|validation (error|fail)|result:? ?FAIL|failed to (commit|push|load config)|config load .{0,30}fail)/i},
+ {id:'ha',cat:'High availability',sev:'high',title:'HA state changes / failures',files:/(ha_agent|ha-agent|hasync|\/ha[^/]*\.log)/i,
+  re:/(state change|transition(ed|ing)? (to|from)|split.?brain|preempt|suspended|non-functional|link monitor.{0,30}(fail|down)|path monitor.{0,30}(fail|down)|peer .{0,30}(down|lost|unreachable)|hello .{0,20}(missed|timeout)|heartbeat .{0,20}(missed|timeout|lost))/i},
+ {id:'vpn',cat:'VPN',sev:'med',title:'IKE / IPsec / GlobalProtect failures',files:/(ikemgr|keymgr|ike|ipsec|rasmgr|satd|gpsvc|sslvpn|\/gp)/i,
+  re:/(NO_PROPOSAL_CHOSEN|AUTHENTICATION_FAILED|INVALID_ID_INFORMATION|TS_UNACCEPTABLE|proposal mismatch|no suitable proposal|negotiation (failed|timeout|timed out)|(phase ?[12]|IKE ?SA|IPsec ?SA|child ?sa|IKEv[12]).{0,60}(fail|timeout|timed out|rejected)|dpd.{0,40}(timeout|dead|fail)|tunnel .{0,40}(down|fail))/i},
+ {id:'route',cat:'Routing',sev:'med',title:'Routing adjacency changes',files:/(routed|route|bgp|ospf|rip|bfd|frr|zebra|pim)/i,
+  re:/(BGP|OSPF|BFD|PIM|peer|neighbou?r|adjacency).{0,80}(down|idle|reset|notification|hold ?timer|expired|lost|dead|changed state|state change)/i},
+ {id:'link',cat:'Interfaces',sev:'med',title:'Link / interface flaps',files:/(brdagent|ha_agent|dp\d*-|sysd|ethernet|kern|messages|l2ctrl|lacp)/i,
+  re:/(link (is |went )?(down|up)\b|link state.{0,30}(down|change)|carrier (lost|down)|(port|interface) \S+ .{0,20}(down|went down|flap)|lacp.{0,40}(timeout|down|detached))/i},
+ {id:'userid',cat:'User-ID',sev:'low',title:'User-ID / authentication errors',files:/(useridd|authd|ldap|userid|captive|cas|radius|saml|kerberos)/i,
+  re:/(fail|error|timed? ?out|disconnect|unable to|unreachable|refused|invalid credential)/i},
+ {id:'cert',cat:'Certificates / licenses',sev:'med',title:'Certificate or license problems',files:/./,
+  re:/(certificate.{0,60}(expired|expires|expiring|invalid|revoked|verify fail|verification fail|not yet valid)|license.{0,40}(expired|expiring|invalid|fail))/i},
+ {id:'panorama',cat:'Management',sev:'med',title:'Panorama / management connectivity',files:/(ms|mgmt|devsrvr|panorama|cs|logd|logrcvr)[^/]*\.log/i,
+  re:/(panorama.{0,60}(disconnect|lost|fail|unreachable|timeout)|connection to .{0,40}(lost|failed|closed|refused)|log forwarding.{0,30}(fail|stop|buffer))/i},
+ {id:'content',cat:'Management',sev:'low',title:'Content / software update failures',files:/\.log/i,
+  re:/((content|antivirus|wildfire|threat|apps?|application|software|panos|pan-os).{0,40}(download|install|update|upgrade).{0,40}(fail|error))/i},
+ {id:'generic',cat:'Generic',sev:'low',title:'Other errors (CRITICAL / FATAL / ERROR)',files:/\.log/i,generic:true,
+  re:/\b(CRITICAL|FATAL|PANIC|EMERG|ALERT|ERROR|Error:|error:)/},
+];
+const RB=Object.fromEntries(RULES.map(r=>[r.id,r]));
+const SEVC={high:'var(--high)',med:'var(--med)',low:'var(--low)'};
+const HIT_CAP=5000;
+
+/* ---------- timestamps ---------- */
+const MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+function yearHint(f){const d=new Date(((f.mtime||S.maxMtime)||Date.now()/1000)*1000);return{y:d.getUTCFullYear(),m:d.getUTCMonth()};}
+/* Times are kept as the device wrote them (no time zone conversion). */
+function parseTs(line,yh){
+  const s=line.slice(0,160);
+  let m=s.match(/(\d{4})[-\/](\d{2})[-\/](\d{2})[ T_](\d{2}):(\d{2}):(\d{2})/);
+  if(m)return Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]);
+  m=s.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:\s+(\d{4}))?/);
+  if(m){const mo=MON[m[1]];let y=m[6]?+m[6]:yh.y;if(!m[6]&&mo>yh.m)y--;return Date.UTC(y,mo,+m[2],+m[3],+m[4],+m[5]);}
+  m=s.match(/(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  if(m)return Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]);
+  return null;
+}
+
+/* ---------- load ---------- */
+function resetState(){
+  Object.assign(S,{name:'',files:[],info:{},infoSrc:'',hits:[],ruleCount:{},fileHits:new Map(),pins:[],textCache:new Map(),tree:null,maxMtime:0});
+  Object.assign(V,{f:null,lines:null,idx:null,hl:null,baseHl:null,tgt:0});
+}
+async function openArchive(file){
+  if(!('DecompressionStream' in window)){alert('This browser lacks DecompressionStream. Use a current Chrome, Edge, Firefox or Safari.');return;}
+  resetState();S.name=file.name;S.size=file.size;
+  try{
+    busy('Reading '+file.name+'…');await tick();
+    let u8=new Uint8Array(await file.arrayBuffer());
+    if(isGz(u8)){busy('Decompressing…');await tick();u8=await gunzip(u8);}
+    const out=[];
+    if(!parseTar(u8,'',out))throw new Error('This is not a tar archive. Expected a tech support .tgz.');
+    busy('Expanding nested archives…');await tick();
+    for(let i=0;i<out.length;i++){
+      const f=out[i];
+      if(/\.(tgz|tar\.gz|tar)$/i.test(f.path)&&f.size>0&&f.size<500e6){
+        try{let d=f.data;if(isGz(d))d=await gunzip(d);const sub=[];
+          if(parseTar(d,f.path+'/',sub)&&sub.length){f.expanded=true;for(const s of sub)out.push(s);}}catch(e){}
+      }
+    }
+    S.files=out.filter(f=>!f.expanded);
+    S.files.sort((a,b)=>a.path.localeCompare(b.path));
+    S.files.forEach((f,i)=>{f.id=i;f.gz=isGz(f.data);});
+    S.maxMtime=S.files.reduce((m,f)=>Math.max(m,f.mtime||0),0);
+    busy('Reading system info…');await tick();
+    await extractInfo();
+    await runTriage();
+    loadPins();
+    buildTree();
+    $('#arch').textContent=`${file.name} · ${fmtB(file.size)} · ${fmtN(S.files.length)} files`;
+    $$('#tabs button').forEach(b=>b.disabled=false);$('#expBtn').disabled=false;
+    renderOverview();renderRules();selectRule(firstRuleWithHits());renderTimelineControls();renderTimeline();
+    renderTree();renderNotes();
+    showTab('overview');
+  }catch(e){console.error(e);alert('Could not open the file: '+e.message);}
+  finally{busy(null);}
+}
+
+/* ---------- system info ---------- */
+const INFO_KEYS=['hostname','model','serial','sw-version','family','uptime','ip-address','operational-mode','multi-vsys','app-version','threat-version','av-version','wildfire-version','url-filtering-version','global-protect-client-package-version','device-certificate-status','vm-license'];
+async function extractInfo(){
+  const score=f=>/techsupport|tech_support|tech-support/i.test(f.path)?3:/\/cli\//i.test(f.path)?2:/show|system|info/i.test(f.path)?1:0;
+  const cands=S.files.filter(f=>f.size<200e6).sort((a,b)=>score(b)-score(a));
+  let n=0;
+  for(const f of cands){
+    if(score(f)===0&&(++n>400||f.size>20e6))continue;
+    const t=await getText(f);if(!t)continue;
+    const i=t.search(/^[ \t]*sw-version:[ \t]*\S/m);if(i<0)continue;
+    const blk=t.slice(Math.max(0,i-4000),i+4000);
+    for(const k of INFO_KEYS){
+      const m=blk.match(new RegExp('^[ \\t]*'+escRe(k)+':[ \\t]*(.+)$','m'));if(m)S.info[k]=m[1].trim();
+    }
+    S.infoSrc=f.path;
+    const g=(re)=>{const m=t.match(re);return m?m[1]:null;};
+    const hm=g(/Local Information:[\s\S]{0,2500}?\n[ \t]*Mode:[ \t]*([\w-]+)/);if(hm)S.info['ha-mode']=hm;
+    const hs=g(/Local Information:[\s\S]{0,2500}?\n[ \t]*State:[ \t]*([\w-]+)/);if(hs)S.info['ha-state']=hs;
+    const ps=g(/Peer Information:[\s\S]{0,2500}?\n[ \t]*State:[ \t]*([\w-]+)/);if(ps)S.info['ha-peer-state']=ps;
+    break;
+  }
+}
+
+/* ---------- triage scan ---------- */
+function addHit(r,f,n,line,ts){
+  S.ruleCount[r.id]++;S.fileHits.set(f.id,(S.fileHits.get(f.id)||0)+1);
+  if(S.ruleCount[r.id]>HIT_CAP)return;
+  S.hits.push({r:r.id,f:f.id,n,t:line.length>600?line.slice(0,600)+' …':line,ts});
+}
+async function runTriage(){
+  const t0=performance.now();
+  RULES.forEach(r=>S.ruleCount[r.id]=0);
+  const crash=RULES.find(r=>r.pathOnly);
+  for(const f of S.files)if(crash.pathOnly.test(f.path))
+    addHit(crash,f,0,`${base(f.path)} · ${fmtB(f.size)} · modified ${f.mtime?fmtTs(f.mtime*1000)+' UTC':'unknown'}`,null);
+  const lineRules=RULES.filter(r=>r.re);
+  const elig=S.files.filter(f=>/\.log(\.\d+)?(\.gz)?$|\/log\/|\/logs?\/|messages|\.txt$|\.out$/i.test(f.path)&&f.size<400e6);
+  S.skippedBig=S.files.filter(f=>f.size>=400e6).length;
+  for(let k=0;k<elig.length;k++){
+    const f=elig[k];
+    if(k%8===0){busy(`Scanning logs… ${k}/${elig.length}`);await tick();}
+    const t=await getText(f);if(!t)continue;
+    const rs=lineRules.filter(r=>r.files.test(f.path)&&r.re.test(t));
+    if(!rs.length)continue;
+    const spec=rs.filter(r=>!r.generic),gen=rs.find(r=>r.generic);
+    const yh=yearHint(f);
+    const lines=t.split('\n');
+    for(let i=0;i<lines.length;i++){
+      const L=lines[i];let hit=false;
+      for(const r of spec)if(r.re.test(L)){addHit(r,f,i+1,L,parseTs(L,yh));hit=true;}
+      if(!hit&&gen&&gen.re.test(L))addHit(gen,f,i+1,L,parseTs(L,yh));
+    }
+  }
+  S.scanned=elig.length;S.scanMs=performance.now()-t0;
+}
+
+/* ---------- tabs ---------- */
+function showTab(t){
+  $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  $$('main>section').forEach(s=>s.hidden=s.id!=='t-'+t);
+  if(t==='files')requestAnimationFrame(vLayout);
+  if(t==='notes')renderNotes();
+}
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b&&!b.disabled)showTab(b.dataset.tab);});
+
+/* ---------- overview ---------- */
+function renderOverview(){
+  const info=Object.entries(S.info);
+  const tot={high:0,med:0,low:0};RULES.forEach(r=>tot[r.sev]+=S.ruleCount[r.id]);
+  const logs=S.files.filter(f=>/\.log/i.test(f.path)).sort((a,b)=>b.size-a.size).slice(0,10);
+  const textCount=S.files.filter(f=>!f.binary).length;
+  const tsRange=S.hits.reduce((a,h)=>h.ts==null?a:[Math.min(a[0],h.ts),Math.max(a[1],h.ts)],[Infinity,-Infinity]);
+  $('#t-overview').innerHTML=`
+  <div class="grid">
+    <div class="card"><h2>Device</h2>${info.length?`<table>${info.map(([k,v])=>`<tr><td class="k">${esc(k)}</td><td class="mono">${esc(v)}</td></tr>`).join('')}</table>
+      <div class="note" style="padding:8px 0 0">From <button class="link mono" data-open="${S.files.findIndex(f=>f.path===S.infoSrc)}">${esc(S.infoSrc)}</button></div>`
+      :'<p class="muted">No <span class="mono">show system info</span> output found in this archive.</p>'}</div>
+    <div class="card"><h2>Archive</h2><table>
+      <tr><td class="k">File</td><td class="mono">${esc(S.name)}</td></tr>
+      <tr><td class="k">Compressed size</td><td>${fmtB(S.size)}</td></tr>
+      <tr><td class="k">Files</td><td>${fmtN(S.files.length)} (${fmtN(textCount)} text)</td></tr>
+      <tr><td class="k">Logs scanned</td><td>${fmtN(S.scanned)} in ${(S.scanMs/1000).toFixed(1)} s${S.skippedBig?` · ${S.skippedBig} files over 400 MB skipped`:''}</td></tr>
+      <tr><td class="k">Newest file</td><td>${S.maxMtime?fmtTs(S.maxMtime*1000)+' UTC':'—'}</td></tr>
+      <tr><td class="k">Hit time span</td><td>${isFinite(tsRange[0])?fmtTs(tsRange[0])+' → '+fmtTs(tsRange[1]):'—'} <span class="muted">(device local)</span></td></tr>
+      <tr><td class="k">Findings</td><td><span class="sev high">${fmtN(tot.high)} high</span> <span class="sev med">${fmtN(tot.med)} med</span> <span class="sev low">${fmtN(tot.low)} low</span></td></tr>
+    </table></div>
+    <div class="card" style="grid-column:1/-1"><h2>Triage summary</h2><table>
+      <tr><th>Check</th><th>Area</th><th>Severity</th><th style="text-align:right">Hits</th><th style="text-align:right">Files</th></tr>
+      ${RULES.map(r=>{const c=S.ruleCount[r.id];const nf=new Set(S.hits.filter(h=>h.r===r.id).map(h=>h.f)).size;
+        return `<tr class="clk${c?'':' zero'}" data-rule="${r.id}"><td>${esc(r.title)}</td><td class="muted">${esc(r.cat)}</td><td><span class="sev ${r.sev}">${r.sev}</span></td><td class="n">${fmtN(c)}</td><td class="n">${fmtN(nf)}</td></tr>`;}).join('')}
+    </table></div>
+    <div class="card"><h2>Largest logs</h2><table>${logs.map(f=>`<tr class="clk" data-open="${f.id}"><td class="mono">${esc(f.path)}</td><td class="n">${fmtB(f.size)}</td></tr>`).join('')}</table></div>
+    <div class="card"><h2>Most findings by file</h2><table>${[...S.fileHits.entries()].sort((a,b)=>b[1]-a[1]).slice(0,10).map(([id,c])=>`<tr class="clk" data-open="${id}"><td class="mono">${esc(S.files[id].path)}</td><td class="n">${fmtN(c)}</td></tr>`).join('')||'<tr><td class="muted">None</td></tr>'}</table></div>
+  </div>`;
+}
+$('#t-overview').addEventListener('click',e=>{
+  const r=e.target.closest('[data-rule]');if(r){selectRule(r.dataset.rule);showTab('triage');return;}
+  const o=e.target.closest('[data-open]');if(o&&+o.dataset.open>=0)openFile(+o.dataset.open);
+});
+
+/* ---------- triage view ---------- */
+let curRule=null,curRuleFile=null;
+function firstRuleWithHits(){return(RULES.find(r=>r.sev==='high'&&S.ruleCount[r.id])||RULES.find(r=>S.ruleCount[r.id])||RULES[0]).id;}
+function renderRules(){
+  $('#ruleList').innerHTML=RULES.map(r=>`<div class="rule${S.ruleCount[r.id]?'':' zero'}${r.id===curRule?' on':''}" data-rule="${r.id}">
+    <span class="sev ${r.sev}">${r.sev}</span><span class="t">${esc(r.title)}<br><span class="muted" style="font-size:12px">${esc(r.cat)}</span></span><span class="c">${fmtN(S.ruleCount[r.id])}</span></div>`).join('');
+}
+function selectRule(id){curRule=id;curRuleFile=null;$('#hitFilter').value='';renderRules();renderHits();}
+$('#ruleList').addEventListener('click',e=>{const r=e.target.closest('[data-rule]');if(r)selectRule(r.dataset.rule);});
+function hitRow(h,re,showRule){
+  const f=S.files[h.f];const pinned=S.pins.some(p=>p.path===f.path&&p.n===h.n);
+  return `<div class="hit" data-f="${h.f}" data-n="${h.n}" data-r="${h.r}">
+    <span class="ts">${showRule?`<span class="sw" style="background:${SEVC[RB[h.r].sev]}"></span>`:''}${h.ts!=null?fmtTs(h.ts):'—'}</span>
+    <span class="fp" title="${esc(f.path)}">${esc(base(f.path))}${h.n?':'+h.n:''}</span>
+    <span class="tx">${hlText(h.t,re)}</span>
+    ${h.n?`<button class="pinb${pinned?' on':''}" title="Pin to notes">${pinned?'★':'☆'}</button>`:'<span></span>'}</div>`;
+}
+function renderHits(){
+  const r=RB[curRule];const q=$('#hitFilter').value.toLowerCase();
+  let hs=S.hits.filter(h=>h.r===curRule);
+  const byFile=new Map();hs.forEach(h=>byFile.set(h.f,(byFile.get(h.f)||0)+1));
+  $('#ruleFiles').innerHTML=[...byFile.entries()].sort((a,b)=>b[1]-a[1]).slice(0,12).map(([id,c])=>
+    `<span class="chip${curRuleFile===id?' on':''}" data-f="${id}" title="${esc(S.files[id].path)}">${esc(base(S.files[id].path))} · ${c}</span>`).join('')||'';
+  $('#ruleFiles').hidden=!byFile.size;
+  if(curRuleFile!=null)hs=hs.filter(h=>h.f===curRuleFile);
+  if(q)hs=hs.filter(h=>h.t.toLowerCase().includes(q)||S.files[h.f].path.toLowerCase().includes(q));
+  const total=S.ruleCount[curRule];
+  $('#ruleTitle').innerHTML=`${esc(r.title)} <span class="muted" style="font-weight:400">· ${fmtN(total)} hits${total>HIT_CAP?` (first ${fmtN(HIT_CAP)} kept)`:''}</span>`;
+  const show=hs.slice(0,2000);
+  $('#hitList').innerHTML=show.length?show.map(h=>hitRow(h,r.re||null)).join('')+(hs.length>show.length?`<div class="note">Showing ${fmtN(show.length)} of ${fmtN(hs.length)}. Narrow with the filter or a file chip.</div>`:'')
+    :`<div class="note">No hits for this check.</div>`;
+}
+$('#hitFilter').addEventListener('input',debounce(renderHits,150));
+$('#ruleFiles').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;const id=+c.dataset.f;curRuleFile=curRuleFile===id?null:id;renderHits();});
+function onHitClick(e,refresh){
+  const row=e.target.closest('.hit');if(!row)return;
+  const f=S.files[+row.dataset.f],n=+row.dataset.n,r=RB[row.dataset.r];
+  if(e.target.closest('.pinb')){const h=S.hits.find(x=>x.f===f.id&&x.n===n);togglePin(f,n,h?h.t:'',r?r.id:'');refresh();return;}
+  openFile(f.id,n,r&&r.re?r.re:null);
+}
+$('#hitList').addEventListener('click',e=>onHitClick(e,renderHits));
+
+/* ---------- timeline ---------- */
+const TL={rules:new Set()};
+const dtl2ms=v=>{if(!v)return null;const m=v.match(/(\d+)-(\d+)-(\d+)T(\d+):(\d+)(?::(\d+))?/);return m?Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0)):null;};
+const ms2dtl=t=>new Date(t).toISOString().slice(0,19);
+function renderTimelineControls(){
+  TL.rules=new Set(RULES.filter(r=>r.re&&!r.generic).map(r=>r.id));
+  $('#tlRules').innerHTML=RULES.filter(r=>r.re).map(r=>{const c=S.hits.filter(h=>h.r===r.id&&h.ts!=null).length;
+    return `<label${c?'':' class="muted"'}><input type="checkbox" data-r="${r.id}"${TL.rules.has(r.id)?' checked':''}><span class="sw" style="background:${SEVC[r.sev]}"></span>${esc(r.title)} <span class="muted">(${fmtN(c)})</span></label>`;}).join('');
+  $('#tlFrom').value='';$('#tlTo').value='';
+}
+$('#tlRules').addEventListener('change',e=>{const c=e.target;if(!c.dataset.r)return;c.checked?TL.rules.add(c.dataset.r):TL.rules.delete(c.dataset.r);renderTimeline();});
+$('#tlFrom').addEventListener('change',renderTimeline);$('#tlTo').addEventListener('change',renderTimeline);
+$('#tlReset').addEventListener('click',()=>{$('#tlFrom').value='';$('#tlTo').value='';renderTimeline();});
+const BUCKETS=[[1e3,'1 s'],[1e4,'10 s'],[6e4,'1 min'],[3e5,'5 min'],[9e5,'15 min'],[36e5,'1 h'],[216e5,'6 h'],[864e5,'1 day'],[6048e5,'1 week'],[2592e6,'30 days']];
+function renderTimeline(){
+  const from=dtl2ms($('#tlFrom').value),to=dtl2ms($('#tlTo').value);
+  const hs=S.hits.filter(h=>h.ts!=null&&TL.rules.has(h.r)&&(from==null||h.ts>=from)&&(to==null||h.ts<=to)).sort((a,b)=>a.ts-b.ts);
+  const svg=$('#tlChart');
+  if(!hs.length){svg.innerHTML='';svg.setAttribute('viewBox','0 0 100 100');$('#tlA0').textContent=$('#tlA1').textContent=$('#tlBucket').textContent='';
+    $('#tlCount').textContent='No timestamped hits for this selection.';$('#tlList').innerHTML='';return;}
+  const t0=hs[0].ts,t1=hs[hs.length-1].ts,span=Math.max(1,t1-t0);
+  let [B,label]=BUCKETS.find(b=>span/b[0]<=150)||BUCKETS[BUCKETS.length-1];
+  const s0=Math.floor(t0/B)*B,nb=Math.floor((t1-s0)/B)+1;
+  const cnt=Array.from({length:nb},()=>({high:0,med:0,low:0}));
+  hs.forEach(h=>cnt[Math.floor((h.ts-s0)/B)][RB[h.r].sev]++);
+  const max=Math.max(...cnt.map(c=>c.high+c.med+c.low));
+  const W=10,H=100;let g='';
+  cnt.forEach((c,i)=>{let y=H;const tot=c.high+c.med+c.low;if(!tot)return;
+    for(const s of ['low','med','high']){if(!c[s])continue;const h=Math.max(1.5,c[s]/max*(H-4));y-=h;
+      g+=`<rect data-b="${i}" x="${i*W+1}" y="${y}" width="${W-2}" height="${h}" fill="${SEVC[s]}"><title>${fmtTs(s0+i*B)} · ${tot} hits</title></rect>`;}});
+  svg.setAttribute('viewBox',`0 0 ${nb*W} ${H}`);svg.innerHTML=g;
+  svg.dataset.s0=s0;svg.dataset.b=B;
+  $('#tlA0').textContent=fmtTs(s0);$('#tlA1').textContent=fmtTs(s0+nb*B);$('#tlBucket').textContent=`bar = ${label} · click a bar to zoom`;
+  const show=hs.slice(0,3000);
+  $('#tlCount').textContent=`${fmtN(hs.length)} timestamped hits${hs.length>show.length?`, showing first ${fmtN(show.length)}`:''}. Times are as written by the device, not converted.`;
+  $('#tlList').innerHTML=show.map(h=>hitRow(h,RB[h.r].re,true)).join('');
+}
+$('#tlChart').addEventListener('click',e=>{const r=e.target.closest('rect');if(!r)return;const svg=$('#tlChart');
+  const a=+svg.dataset.s0+(+r.dataset.b)*(+svg.dataset.b);$('#tlFrom').value=ms2dtl(a);$('#tlTo').value=ms2dtl(a+(+svg.dataset.b)-1000);renderTimeline();});
+$('#tlList').addEventListener('click',e=>onHitClick(e,renderTimeline));
+
+/* ---------- file tree ---------- */
+function buildTree(){
+  const root={name:'',dirs:new Map(),files:[],c:0,h:0};
+  for(const f of S.files){
+    const parts=f.path.split('/').filter(Boolean);let n=root;
+    for(let i=0;i<parts.length-1;i++){const p=parts[i];if(!n.dirs.has(p))n.dirs.set(p,{name:p,dirs:new Map(),files:[],c:0,h:0});n=n.dirs.get(p);}
+    n.files.push(f);
+  }
+  (function agg(n){n.c=n.files.length;n.h=n.files.reduce((s,f)=>s+(S.fileHits.get(f.id)||0),0);
+    for(const d of n.dirs.values()){agg(d);n.c+=d.c;n.h+=d.h;}})(root);
+  S.tree=root;
+}
+function fileRow(f,full){const h=S.fileHits.get(f.id);
+  return `<div class="file${V.f===f?' sel':''}" data-id="${f.id}" title="${esc(f.path)}"><span class="nm">${esc(full?f.path:base(f.path))}</span>${h?`<span class="badge">${h}</span>`:''}<span class="sz">${fmtB(f.size)}${f.gz?' gz':''}</span></div>`;}
+function dirHTML(node){
+  const dirs=[...node.dirs.values()].sort((a,b)=>a.name.localeCompare(b.name));
+  return dirs.map(d=>`<details data-dir><summary>${esc(d.name)} <span class="c">${d.c}${d.h?` · <span style="color:var(--med)">${fmtN(d.h)} hit${d.h===1?'':'s'}</span>`:''}</span></summary></details>`).join('')
+    +node.files.map(f=>fileRow(f)).join('');
+}
+function renderTree(){
+  const el=$('#tree');el.className='tree';el.innerHTML=dirHTML(S.tree);bindDirs(el,S.tree);
+}
+function bindDirs(el,node){
+  const dirs=[...node.dirs.values()].sort((a,b)=>a.name.localeCompare(b.name));
+  [...el.children].filter(c=>c.matches('details[data-dir]')).forEach((det,i)=>{
+    const d=dirs[i];let done=false;
+    det.addEventListener('toggle',()=>{if(det.open&&!done){done=true;det.insertAdjacentHTML('beforeend',dirHTML(d));bindDirs(det,d);}});
+  });
+}
+$('#treeFilter').addEventListener('input',debounce(()=>{
+  const q=$('#treeFilter').value.trim().toLowerCase();
+  if(!q){renderTree();return;}
+  const m=S.files.filter(f=>f.path.toLowerCase().includes(q));
+  $('#tree').className='tree flat';
+  $('#tree').innerHTML=m.slice(0,1500).map(f=>fileRow(f,true)).join('')+(m.length>1500?`<div class="note">${fmtN(m.length-1500)} more…</div>`:'')+(m.length?'':'<div class="note">No matching files.</div>');
+},150));
+$('#tree').addEventListener('click',e=>{const r=e.target.closest('.file');if(r)openFile(+r.dataset.id);});
+
+/* ---------- viewer (virtualised) ---------- */
+const LH=18,MAXH=8e6;
+const V={f:null,lines:null,idx:null,hl:null,baseHl:null,tgt:0};
+function hlText(s,re){
+  if(s.length>3000)s=s.slice(0,3000)+' …[line truncated]';
+  if(!re)return esc(s);
+  const g=new RegExp(re.source,(re.flags.includes('i')?'i':'')+'g');
+  let out='',last=0,m,guard=0;
+  while((m=g.exec(s))&&guard++<300){if(!m[0]){g.lastIndex++;continue;}out+=esc(s.slice(last,m.index))+'<mark>'+esc(m[0])+'</mark>';last=m.index+m[0].length;}
+  return out+esc(s.slice(last));
+}
+function vCount(){return V.idx?V.idx.length:(V.lines?V.lines.length:0);}
+function vLayout(){
+  const n=vCount();const total=Math.min(n*LH,MAXH);
+  $('#vspace').style.height=total+'px';vRender();
+}
+function vRender(){
+  const w=$('#vwrap'),rows=$('#vrows');
+  if(!V.lines){rows.innerHTML='';return;}
+  const n=vCount(),ch=w.clientHeight||600,vis=Math.ceil(ch/LH)+2,real=n*LH;
+  let s,e,top;
+  if(real<=MAXH){s=Math.max(0,Math.floor(w.scrollTop/LH)-30);e=Math.min(n,s+vis+60);top=s*LH;}
+  else{const frac=w.scrollTop/Math.max(1,MAXH-ch);s=Math.min(Math.max(0,n-vis),Math.floor(frac*Math.max(0,n-vis)));e=Math.min(n,s+vis);top=w.scrollTop;}
+  const pins=new Set(S.pins.filter(p=>p.path===V.f.path).map(p=>p.n));
+  let h='';
+  for(let i=s;i<e;i++){const ln=V.idx?V.idx[i]:i,no=ln+1;
+    h+=`<div class="ln${no===V.tgt?' tgt':''}${pins.has(no)?' pinned':''}" data-n="${no}"><span class="no" title="Click to pin">${no}</span><span class="tx">${hlText(V.lines[ln],V.hl)}</span></div>`;}
+  rows.style.transform=`translateY(${top}px)`;rows.innerHTML=h;
+}
+$('#vwrap').addEventListener('scroll',()=>requestAnimationFrame(vRender));
+window.addEventListener('resize',()=>requestAnimationFrame(vRender));
+function vScrollToPos(p){
+  const w=$('#vwrap'),n=vCount(),ch=w.clientHeight||600,vis=Math.ceil(ch/LH)+2;
+  if(n*LH<=MAXH)w.scrollTop=Math.max(0,p*LH-ch/3);
+  else w.scrollTop=Math.max(0,(p-Math.floor(vis/3))/Math.max(1,n-vis)*(MAXH-ch));
+  vRender();
+}
+function jumpTo(no){
+  if(!V.lines)return;no=Math.max(1,Math.min(no,V.lines.length));V.tgt=no;
+  let p=no-1;
+  if(V.idx){p=V.idx.indexOf(no-1);if(p<0){$('#vfilter').value='';applyVFilter();p=no-1;}}
+  vScrollToPos(p);
+}
+async function openFile(id,line,hlRe){
+  const f=S.files[id];if(!f)return;
+  showTab('files');V.f=f;V.tgt=line||0;V.baseHl=hlRe||null;V.hl=V.baseHl;V.idx=null;$('#vfilter').value='';
+  $$('#tree .file').forEach(el=>el.classList.toggle('sel',+el.dataset.id===id));
+  $('#vpath').textContent=f.path;$('#vpath').title=f.path;$('#vmeta').textContent=fmtB(f.size)+(f.gz?' · gzip':'');$('#vdl').disabled=false;
+  busy('Opening '+base(f.path)+'…');await tick();
+  const t=await getText(f);busy(null);
+  if(t==null){V.lines=null;$('#vmsg').hidden=false;$('#vmsg').textContent='Binary file (core dump, database or image). Use Download to save it for other tools.';
+    $('#vwrap').hidden=true;$('#vstat').textContent='';return;}
+  $('#vmsg').hidden=true;$('#vwrap').hidden=false;
+  V.lines=t.split('\n');if(V.lines.length>1&&V.lines[V.lines.length-1]==='')V.lines.pop();
+  $('#vstat').textContent=`${fmtN(V.lines.length)} lines · click a line number to pin it`;
+  $('#vwrap').scrollTop=0;$('#vwrap').scrollLeft=0;vLayout();
+  if(line)requestAnimationFrame(()=>jumpTo(line));
+}
+function applyVFilter(){
+  if(!V.lines)return;const q=$('#vfilter').value;
+  if(!q){V.idx=null;V.hl=V.baseHl;$('#vstat').textContent=`${fmtN(V.lines.length)} lines · click a line number to pin it`;vLayout();return;}
+  let re;try{re=$('#vre').checked?new RegExp(q,'i'):new RegExp(escRe(q),'i');}catch(e){$('#vstat').textContent='Bad regex: '+e.message;return;}
+  const idx=[];for(let i=0;i<V.lines.length;i++)if(re.test(V.lines[i]))idx.push(i);
+  V.idx=idx;V.hl=re;$('#vstat').textContent=`${fmtN(idx.length)} of ${fmtN(V.lines.length)} lines match`;
+  $('#vwrap').scrollTop=0;vLayout();
+}
+$('#vfilter').addEventListener('input',debounce(applyVFilter,250));$('#vre').addEventListener('change',applyVFilter);
+$('#vgoto').addEventListener('keydown',e=>{if(e.key==='Enter'&&+e.target.value)jumpTo(+e.target.value);});
+$('#vrows').addEventListener('click',e=>{const no=e.target.closest('.no');if(!no||!V.f)return;const n=+no.parentNode.dataset.n;
+  togglePin(V.f,n,V.lines[n-1]||'','');vRender();});
+$('#vdl').addEventListener('click',async()=>{if(!V.f)return;const b=await getBytes(V.f);download(new Blob([b]),base(V.f.path).replace(/\.gz$/i,V.f.gz?'':'.gz'));});
+
+/* ---------- search ---------- */
+let searchStop=false;
+async function runSearch(){
+  const q=$('#sq').value;if(!q)return;let re;
+  try{re=new RegExp($('#sre').checked?q:escRe(q),$('#scase').checked?'':'i');}catch(e){$('#sstat').textContent='Bad regex: '+e.message;return;}
+  const pf=$('#spath').value.trim().toLowerCase();
+  const files=S.files.filter(f=>!pf||f.path.toLowerCase().includes(pf));
+  const nameHits=files.filter(f=>re.test(f.path)).slice(0,50);
+  $('#sfiles').innerHTML=nameHits.length?`<div class="card" style="margin-bottom:10px"><h2>File names matching</h2>${nameHits.map(f=>`<div class="file flat" data-id="${f.id}" style="padding-left:0"><span class="nm mono">${hlText(f.path,re)}</span><span class="sz">${fmtB(f.size)}</span></div>`).join('')}</div>`:'';
+  const res=[];let total=0,nf=0;searchStop=false;$('#sstop').hidden=false;$('#sgo').disabled=true;
+  for(let i=0;i<files.length&&!searchStop;i++){
+    if(i%6===0){$('#sstat').textContent=`Searching ${fmtN(i)}/${fmtN(files.length)} files… ${fmtN(total)} matches`;await tick();}
+    const f=files[i];if(f.size>=400e6)continue;
+    const t=await getText(f);if(!t||!re.test(t))continue;nf++;
+    const lines=t.split('\n');
+    for(let j=0;j<lines.length;j++)if(re.test(lines[j])){total++;if(res.length<5000)res.push({f:f.id,n:j+1,t:lines[j].length>600?lines[j].slice(0,600)+' …':lines[j],ts:parseTs(lines[j],yearHint(f)),r:''});}
+  }
+  $('#sstop').hidden=true;$('#sgo').disabled=false;S.lastSearch={re,res};
+  $('#sstat').textContent=`${fmtN(total)} matching lines in ${fmtN(nf)} files${searchStop?' (stopped early)':''}${total>res.length?`, showing first ${fmtN(res.length)}`:''}.`;
+  renderSearch();
+}
+function renderSearch(){const s=S.lastSearch;if(!s)return;$('#sres').innerHTML=s.res.map(h=>hitRow(h,s.re)).join('');}
+$('#sgo').addEventListener('click',runSearch);$('#sq').addEventListener('keydown',e=>{if(e.key==='Enter')runSearch();});
+$('#sstop').addEventListener('click',()=>searchStop=true);
+$('#sres').addEventListener('click',e=>{const row=e.target.closest('.hit');if(!row)return;
+  const f=S.files[+row.dataset.f],n=+row.dataset.n;
+  if(e.target.closest('.pinb')){const h=S.lastSearch.res.find(x=>x.f===f.id&&x.n===n);togglePin(f,n,h?h.t:'','search');renderSearch();return;}
+  openFile(f.id,n,S.lastSearch.re);});
+$('#sfiles').addEventListener('click',e=>{const r=e.target.closest('.file');if(r)openFile(+r.dataset.id);});
+
+/* ---------- pins / notes ---------- */
+const pinKey=()=>'tsf-pins:'+S.name+':'+S.size;
+function savePins(){try{localStorage.setItem(pinKey(),JSON.stringify(S.pins));}catch(e){}}
+function loadPins(){try{const v=localStorage.getItem(pinKey());S.pins=v?JSON.parse(v):[];}catch(e){S.pins=[];}updatePinCount();}
+function updatePinCount(){$('#pinCount').textContent=S.pins.length?`(${S.pins.length})`:'';}
+function togglePin(f,n,t,rule){
+  const i=S.pins.findIndex(p=>p.path===f.path&&p.n===n);
+  if(i>=0)S.pins.splice(i,1);
+  else{const ts=parseTs(t,yearHint(f));S.pins.push({path:f.path,n,t:t.length>2000?t.slice(0,2000)+' …':t,rule,ts,note:''});}
+  S.pins.sort((a,b)=>(a.ts??Infinity)-(b.ts??Infinity)||a.path.localeCompare(b.path)||a.n-b.n);
+  savePins();updatePinCount();
+}
+function renderNotes(){
+  const el=$('#t-notes');
+  if(!S.pins.length){el.innerHTML=`<div class="card"><h2>Notes</h2><p class="muted">Nothing pinned yet. Use ☆ on a triage or search hit, or click a line number in the file viewer. Pins are kept in this browser for this archive, and <b>Export notes</b> writes them out as Markdown for a ticket.</p></div>`;return;}
+  el.innerHTML=`<div class="toolbar" style="border:1px solid var(--line);border-radius:8px;margin-bottom:10px"><strong>${S.pins.length} pinned lines</strong><span class="muted">sorted by time</span><div class="sp"></div><button class="btn ghost" id="pinClear">Clear all</button><button class="btn" id="pinExp">Export Markdown</button></div>`+
+  S.pins.map((p,i)=>{const fid=S.files.findIndex(f=>f.path===p.path);return `<div class="pinitem" data-i="${i}">
+    <div class="hd">${p.rule&&RB[p.rule]?`<span class="sev ${RB[p.rule].sev}">${esc(RB[p.rule].title)}</span>`:''}<button class="link mono" data-open="${fid}" data-n="${p.n}">${esc(p.path)}:${p.n}</button><span class="muted mono" style="font-size:12px">${p.ts!=null?fmtTs(p.ts):''}</span><div class="sp"></div><button class="link" data-rm="${i}">Remove</button></div>
+    <pre>${esc(p.t)}</pre><textarea rows="2" placeholder="Your note…" data-note="${i}">${esc(p.note||'')}</textarea></div>`;}).join('');
+}
+$('#t-notes').addEventListener('click',e=>{
+  const o=e.target.closest('[data-open]');if(o&&+o.dataset.open>=0){const p=S.pins.find(x=>x.path===S.files[+o.dataset.open].path&&x.n===+o.dataset.n);openFile(+o.dataset.open,+o.dataset.n,p&&RB[p.rule]?RB[p.rule].re:null);return;}
+  const r=e.target.closest('[data-rm]');if(r){S.pins.splice(+r.dataset.rm,1);savePins();updatePinCount();renderNotes();return;}
+  if(e.target.id==='pinExp')exportMd();
+  if(e.target.id==='pinClear'&&confirm('Remove all pinned lines for this archive?')){S.pins=[];savePins();updatePinCount();renderNotes();}
+});
+$('#t-notes').addEventListener('input',e=>{const t=e.target.closest('[data-note]');if(t){S.pins[+t.dataset.note].note=t.value;savePins();}});
+function exportMd(){
+  const L=[];
+  L.push(`# TSF review: ${S.info.hostname||S.name}`,'',`- Archive: \`${S.name}\``,`- Exported: ${new Date().toISOString().replace('T',' ').slice(0,19)} UTC`,'');
+  if(Object.keys(S.info).length){L.push('## Device','','| Field | Value |','|---|---|');for(const[k,v]of Object.entries(S.info))L.push(`| ${k} | ${String(v).replace(/\|/g,'\\|')} |`);L.push('');}
+  L.push('## Triage counts','','| Check | Severity | Hits |','|---|---|---:|');
+  RULES.filter(r=>S.ruleCount[r.id]).forEach(r=>L.push(`| ${r.title} | ${r.sev} | ${S.ruleCount[r.id]} |`));
+  L.push('');
+  if(S.pins.length){L.push('## Pinned lines','');
+    for(const p of S.pins){L.push(`### ${p.ts!=null?fmtTs(p.ts)+' · ':''}${p.path}:${p.n}`,'');if(p.rule&&RB[p.rule])L.push(`_${RB[p.rule].title}_`,'');if(p.note)L.push(p.note,'');L.push('```',p.t,'```','');}}
+  download(L.join('\n'),(S.info.hostname||S.name.replace(/\.(tgz|tar\.gz|tar)$/i,''))+'-tsf-notes.md','text/markdown');
+}
+$('#expBtn').addEventListener('click',exportMd);
+
+/* ---------- input ---------- */
+function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
+$('#fileIn').addEventListener('change',e=>{const f=e.target.files[0];if(f)openArchive(f);e.target.value='';});
+let dragDepth=0;
+window.addEventListener('dragenter',e=>{e.preventDefault();dragDepth++;$('#drop').classList.add('over');});
+window.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('#drop').classList.remove('over');}});
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('#drop').classList.remove('over');const f=e.dataTransfer.files[0];if(f)openArchive(f);});
+</script>
+</body>
+</html>
